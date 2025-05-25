@@ -1,104 +1,140 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de"> <!-- Klasse 'dark-mode' wird hier per JS gesetzt -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minecraft Server Panel</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script>
+        // Initialen Dark Mode basierend auf localStorage oder OS-Präferenz setzen
+        // Dies wird so früh wie möglich ausgeführt, um "Flickern" zu minimieren.
+        (function() {
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const storedTheme = localStorage.getItem('theme');
+            if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
+                document.documentElement.classList.add('dark-mode');
+            } else {
+                document.documentElement.classList.remove('dark-mode'); // Explizit entfernen für den Fall, dass es mal gesetzt war
+            }
+        })();
+    </script>
 </head>
-<body>
-    <div class="container">
-        <div class="panel-header">
-        <h1>Minecraft Server Panel</h1>
-        {% if logged_in_user %}
-            <div class="user-info">
-                Eingeloggt als: <strong>{{ logged_in_user }}</strong><br>
-                <a href="{{ url_for('logout_route') }}" class="button">Logout</a>
+<body class=""> <!-- Klasse 'dark-mode' wird hier auch dynamisch per JS gesetzt/entfernt -->
+    <div class="main-container">
+        <header class="panel-header">
+            <h1>Server Panel</h1>
+            <div style="display: flex; align-items: center; gap: 20px;">
+                {% if logged_in_user %}
+                    <div class="user-info">
+                        Eingeloggt als: <strong>{{ logged_in_user }}</strong><br>
+                        <a href="{{ url_for('logout_route') }}" class="button">Logout</a>
+                    </div>
+                {% endif %}
+                <div class="theme-switch-wrapper">
+                    <label class="theme-switch" for="theme-checkbox" title="Dark Mode umschalten">
+                        <input type="checkbox" id="theme-checkbox" />
+                        <div class="slider"></div>
+                    </label>
+                    <span id="theme-label" style="display:none;">Dark Mode</span> <!-- Kann per JS befüllt werden, wenn Text gewünscht -->
+                </div>
             </div>
-        {% endif %}
-        </div>
-        
-        <div class="flash-messages-container"> <!-- Container für Flash-Nachrichten -->
-             <div id="message"></div> <!-- Für JS-generierte Nachrichten -->
+        </header>
+
+        <div class="messages-container">
+             <div id="message" class="message" style="display:none;"></div>
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
-                    <ul class="flash-messages">
-                    {% for category, message in messages %}
-                        <li class="{{ category }}">{{ message }}</li>
+                    {% for category, message_text in messages %}
+                        <div class="message {{ category }}">{{ message_text }}</div>
                     {% endfor %}
-                    </ul>
                 {% endif %}
             {% endwith %}
         </div>
 
-        <h2>Server Instanzen</h2>
-        <div class="instance-list">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Instanzname</th>
-                        <th>Status</th>
-                        <th style="width: 250px;">Aktionen</th>
-                    </tr>
-                </thead>
-                <tbody id="instanceTableBody">
-                    <!-- Dynamisch gefüllt -->
-                    <tr><td colspan="3" style="text-align:center; padding: 20px;">Lade Instanzen...</td></tr>
-                </tbody>
-            </table>
-            <button onclick="refreshStatuses()">Status Aktualisieren</button>
-        </div>
-
-        <h2>Neue Server-Instanz / Konfiguration</h2>
-        <form id="serverForm">
-            <label for="instance_name">Instanzname (z.B. 'survival_120'):</label>
-            <input type="text" id="instance_name" name="instance_name" value="neue_instanz" required>
-            <small>Ordner: <code>{{ default_instance_path }}/[Instanzname]</code>. Bestehende Konfiguration wird überschrieben, wenn eine Instanz mit gleichem Namen gestartet wird.</small>
-
-            <label for="server_jar">Server Version (JAR-Datei):</label>
-            <select id="server_jar" name="server_jar" required>
-                <option value="">-- Wähle JAR --</option>
-                {% for jar in server_jars %}
-                    <option value="{{ jar }}">{{ jar }}</option>
-                {% endfor %}
-            </select>
-            {% if not server_jars %}
-            <p class="warning">Keine Server-JARs in <code>{{ macros.SERVER_VERSIONS_BASE_PATH if macros else '/opt/minecraft_versions' }}</code> gefunden!</p>
-            {% endif %}
-
-            <label for="min_ram">Min. RAM (z.B. 1G, 2048M):</label>
-            <input type="text" id="min_ram" name="min_ram" value="1G">
-
-            <label for="max_ram">Max. RAM (z.B. 4G, 4096M):</label>
-            <input type="text" id="max_ram" name="max_ram" value="2G">
-
-            <label for="velocity_secret">Velocity Secret Key (optional):</label>
-            <input type="password" id="velocity_secret" name="velocity_secret" placeholder="Leer lassen, wenn nicht benötigt">
-
-            <label for="java_args">Zusätzliche Java Argumente (optional, überschreibt Aikar's Flags):</label>
-            <textarea id="java_args" name="java_args" placeholder="z.B. -XX:+UseShenandoahGC ... (Standard: Aikar's Flags)"></textarea>
-
-            <label for="server_args">Zusätzliche Server Argumente (Standard: nogui):</label>
-            <input type="text" id="server_args" name="server_args" value="nogui">
-
-            <h3>RCON Konfiguration (optional)</h3>
-            <p><small>RCON muss in der <code>server.properties</code> der Instanz aktiviert sein (<code>enable-rcon=true</code>). Das Panel versucht, die Einstellungen zu setzen, wenn Port und Passwort hier angegeben sind.</small></p>
-            <label for="rcon_port">RCON Port (Standard: {{ default_rcon_port }}):</label>
-            <input type="text" id="rcon_port" name="rcon_port" placeholder="{{ default_rcon_port }}">
-            <label for="rcon_password">RCON Passwort:</label>
-            <input type="password" id="rcon_password" name="rcon_password" placeholder="Leer lassen, um RCON nicht zu nutzen/konfigurieren">
-
-            <div>
-                <input type="checkbox" id="use_screen" name="use_screen" checked>
-                <label for="use_screen" style="display:inline; font-weight:normal;">In Screen-Session starten?</label>
+        <section class="card">
+            <h2>Server Instanzen</h2>
+            <div class="instance-list">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Instanzname</th>
+                            <th>Status</th>
+                            <th style="width: 300px;">Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="instanceTableBody">
+                        <tr><td colspan="3" style="text-align:center; padding: 30px; color: var(--text-color-tertiary);">Lade Instanzen...</td></tr>
+                    </tbody>
+                </table>
             </div>
-            <div id="screen_name_group" style="display: block;">
-                 <label for="screen_name">Screen-Name (optional, wenn oben aktiv):</label>
-                 <input type="text" id="screen_name" name="screen_name" placeholder="Standard: mc_[Instanzname]">
-            </div>
-            <br>
-            <button type="submit" id="startServerButton">Server Starten / Konfiguration Speichern</button>
-        </form>
+            <button onclick="refreshStatuses()" style="margin-top: 20px;">Status Aktualisieren</button>
+        </section>
+
+        <section class="card">
+            <h2>Neue Server-Instanz / Konfiguration Ändern</h2>
+            <form id="serverForm">
+                <label for="instance_name">Instanzname:</label>
+                <input type="text" id="instance_name" name="instance_name" placeholder="z.B. survival_120" required>
+                <p class="form-hint">Ordner: <code>{{ default_instance_path }}/[Instanzname]</code>. Überschreibt bestehende Konfig.</p>
+
+                <label for="server_jar">Server Version (JAR):</label>
+                <select id="server_jar" name="server_jar" required>
+                    <option value="">-- Wähle JAR --</option>
+                    {% for jar in server_jars %}
+                        <option value="{{ jar }}">{{ jar }}</option>
+                    {% endfor %}
+                </select>
+                {% if not server_jars %}
+                <p class="message warning">Keine Server-JARs in <code>{{ macros.SERVER_VERSIONS_BASE_PATH if macros else '/opt/minecraft_versions' }}</code> gefunden!</p>
+                {% endif %}
+
+                <div style="display: flex; gap: 20px; margin-top:15px;">
+                    <div style="flex: 1;">
+                        <label for="min_ram">Min. RAM:</label>
+                        <input type="text" id="min_ram" name="min_ram" value="1G" placeholder="z.B. 1G">
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="max_ram">Max. RAM:</label>
+                        <input type="text" id="max_ram" name="max_ram" value="2G" placeholder="z.B. 2G">
+                    </div>
+                </div>
+
+                <label for="velocity_secret">Velocity Secret Key (optional):</label>
+                <input type="password" id="velocity_secret" name="velocity_secret" placeholder="Leer lassen, wenn nicht benötigt">
+
+                <label for="java_args">Zusätzliche Java Argumente (optional):</label>
+                <textarea id="java_args" name="java_args" placeholder="Standard: Aikar's Flags"></textarea>
+                <p class="form-hint">Überschreibt Standard Aikar's Flags, wenn nicht leer.</p>
+
+                <label for="server_args">Zusätzliche Server Argumente:</label>
+                <input type="text" id="server_args" name="server_args" value="nogui" placeholder="Standard: nogui">
+
+                <h3 style="margin-top: 25px; font-size: 1.2em;">RCON Konfiguration (optional)</h3>
+                <p class="form-hint">Erfordert <code>enable-rcon=true</code> in <code>server.properties</code> der Instanz.</p>
+                <div style="display: flex; gap: 20px;">
+                     <div style="flex: 1;">
+                        <label for="rcon_port">RCON Port:</label>
+                        <input type="text" id="rcon_port" name="rcon_port" placeholder="{{ default_rcon_port }}">
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="rcon_password">RCON Passwort:</label>
+                        <input type="password" id="rcon_password" name="rcon_password" placeholder="Erforderlich, wenn Port gesetzt">
+                    </div>
+                </div>
+
+                <div style="margin-top: 25px;">
+                    <label for="use_screen" class="checkbox-label">
+                        <input type="checkbox" id="use_screen" name="use_screen" checked>
+                        In Screen-Session starten?
+                    </label>
+                </div>
+                <div id="screen_name_group" style="display: block; margin-top: 10px;">
+                     <label for="screen_name">Screen-Name (optional, wenn aktiv):</label>
+                     <input type="text" id="screen_name" name="screen_name" placeholder="Standard: mc_[Instanzname]">
+                </div>
+                <button type="submit" id="startServerButton" style="margin-top: 25px;">Server Starten / Konfiguration Speichern</button>
+            </form>
+        </section>
     </div>
 
     <!-- Log Modal -->
@@ -108,8 +144,8 @@
                 <h3 id="logModalTitle">Server Logs</h3>
                 <div class="log-controls">
                     <label for="liveLogToggle"><input type="checkbox" id="liveLogToggle">Live-Update</label>
-                    <button onclick="manualLogReload()" class="action-btn">Manuell Neu Laden</button>
-                    <button class="close-button" onclick="closeLogModal()">×</button>
+                    <button onclick="manualLogReload()" class="action-btn secondary">Manuell Neu Laden</button>
+                    <button class="close-button" onclick="closeLogModal()" title="Schließen">×</button>
                 </div>
             </div>
             <div id="logOutputContainer">
@@ -124,9 +160,10 @@
     </div>
 
     <script>
+        // --- Globale Variablen und Selektoren ---
         const serverForm = document.getElementById('serverForm');
         const messageDiv = document.getElementById('message');
-        const instanceNameInput = document.getElementById('instance_name'); // für Formular
+        const instanceNameInput = document.getElementById('instance_name');
         const screenNameInput = document.getElementById('screen_name');
         const useScreenCheckbox = document.getElementById('use_screen');
         const screenNameGroup = document.getElementById('screen_name_group');
@@ -140,20 +177,68 @@
         const rconInputArea = document.getElementById('rconInputArea');
         const rconCommandInput = document.getElementById('rconCommandInput');
         const rconResponseOutput = document.getElementById('rconResponseOutput');
+        const logOutputContainer = document.getElementById('logOutputContainer'); // Definiert für scrollToLogBottom
 
-        let currentLogViewInstanceName = null; // Hält den Namen der Instanz, deren Logs angezeigt werden
+        let currentLogViewInstanceName = null;
         let logEventSource = null;
         let autoScrollLogs = true;
 
-        // --- Globale Hilfsfunktionen ---
+        // --- Dark Mode Toggle Logik ---
+        const themeCheckbox = document.getElementById('theme-checkbox');
+        const currentHtml = document.documentElement;
+        const currentBody = document.body;
+
+        function applyTheme(theme) {
+            if (theme === 'dark') {
+                currentHtml.classList.add('dark-mode');
+                currentBody.classList.add('dark-mode'); // Auch für Body, falls spezifische Body-Stile
+                if(themeCheckbox) themeCheckbox.checked = true;
+            } else {
+                currentHtml.classList.remove('dark-mode');
+                currentBody.classList.remove('dark-mode');
+                if(themeCheckbox) themeCheckbox.checked = false;
+            }
+        }
+
+        // Beim Laden der Seite Theme setzen und Listener registrieren
+        document.addEventListener('DOMContentLoaded', () => {
+            const storedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            if (storedTheme) {
+                applyTheme(storedTheme);
+            } else if (prefersDark) {
+                applyTheme('dark');
+            } else {
+                applyTheme('light'); // Standard
+            }
+
+            if (themeCheckbox) {
+                themeCheckbox.addEventListener('change', function(event) {
+                    const newTheme = event.target.checked ? 'dark' : 'light';
+                    applyTheme(newTheme);
+                    localStorage.setItem('theme', newTheme);
+                });
+            }
+            
+            refreshStatuses(); // Initialen Status laden
+            setInterval(refreshStatuses, 10000); // Periodisch aktualisieren
+        });
+        
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (!localStorage.getItem('theme')) { // Nur OS-Präferenz anwenden, wenn Nutzer nicht explizit gewählt hat
+                applyTheme(event.matches ? 'dark' : 'light');
+            }
+        });
+
+        // --- Hilfsfunktionen ---
         function displayMessage(text, type = 'info') {
             messageDiv.textContent = text;
-            messageDiv.className = type; // 'success', 'error', 'warning', 'info'
-            messageDiv.style.display = 'block';
+            messageDiv.className = `message ${type}`;
+            // Sichtbarkeit wird durch die CSS-Klassen .success, .error etc. gesteuert
             setTimeout(() => {
                 messageDiv.textContent = '';
-                messageDiv.className = '';
-                messageDiv.style.display = 'none';
+                messageDiv.className = 'message';
             }, 7000);
         }
 
@@ -167,7 +252,6 @@
                  screenNameInput.value = `mc_${sanitizeForScreen(this.value)}`;
             }
         });
-
         useScreenCheckbox.addEventListener('change', function() {
             screenNameGroup.style.display = this.checked ? 'block' : 'none';
         });
@@ -182,7 +266,10 @@
                 const response = await fetch('/start_server', { method: 'POST', body: formData });
                 const result = await response.json();
                 displayMessage(result.message, result.status);
-                if (result.status === 'success') serverForm.reset();
+                if (result.status === 'success') {
+                    // Formular nicht unbedingt zurücksetzen, damit Nutzer Konfig leicht anpassen kann
+                    // serverForm.reset(); 
+                }
             } catch (error) {
                 displayMessage('Netzwerkfehler: ' + error.message, 'error');
             } finally {
@@ -194,14 +281,14 @@
 
         // --- Log Modal & RCON Funktionen ---
         function openLogModal(instanceName, isRconAvailable) {
-            currentLogViewInstanceName = instanceName; // Wichtig für RCON und manuelle Reloads
+            currentLogViewInstanceName = instanceName;
             logModalTitleEl.textContent = `Logs für: ${instanceName}`;
             logOutputEl.textContent = 'Lade Logs...';
             logModal.classList.add('active');
-            liveLogToggleEl.checked = false; // Standardmäßig kein Live-Log
+            liveLogToggleEl.checked = false; 
 
             if (isRconAvailable) {
-                rconInputArea.style.display = 'flex'; // 'flex' für nebeneinander Anordnung
+                rconInputArea.style.display = 'flex';
                 rconCommandInput.value = '';
                 rconResponseOutput.textContent = '';
             } else {
@@ -212,8 +299,8 @@
         
         function manualLogReload() {
             if(currentLogViewInstanceName) {
-                liveLogToggleEl.checked = false; // Live-Log ausschalten für manuellen Reload
-                fetchInstanceLogs(false, true); // kein initial load, aber force snapshot
+                liveLogToggleEl.checked = false;
+                fetchInstanceLogs(false, true);
             }
         }
 
@@ -227,7 +314,7 @@
                 try {
                     const response = await fetch(`/get_logs/${currentLogViewInstanceName}?lines=500`);
                     const data = await response.json();
-                    if (isInitialLoad || forceSnapshot) logOutputEl.innerHTML = ''; // Nur bei Initial/Force löschen
+                    if (isInitialLoad || forceSnapshot) logOutputEl.innerHTML = '';
                     if (response.ok && !data.error) {
                         appendLogLines(data.logs);
                     } else {
@@ -242,12 +329,12 @@
 
         function startLogStream(isInitialLoad) {
             if (!currentLogViewInstanceName) return;
-            if (logEventSource) { logEventSource.close(); logEventSource = null; } // Schließe alten Stream
+            if (logEventSource) { logEventSource.close(); logEventSource = null; }
             if (isInitialLoad) logOutputEl.innerHTML = 'Verbinde zum Log-Stream...\n';
             
             logEventSource = new EventSource(`/stream_logs/${currentLogViewInstanceName}`);
             logEventSource.onmessage = function(event) {
-                const newLines = event.data.replace(/\\n/g, '\n'); // Wichtig: Escaped \n umwandeln
+                const newLines = event.data.replace(/\\n/g, '\n');
                 appendLogLines(newLines);
             };
             logEventSource.onerror = function(err) {
@@ -261,10 +348,7 @@
         function appendLogLines(logText) {
             const lines = logText.split('\n');
             lines.forEach((line, index) => {
-                // Verhindere, dass eine leere Zeile am Ende (durch split) als extra Zeile hinzugefügt wird,
-                // es sei denn, logText endet wirklich mit \n
                 if (index === lines.length - 1 && line === '' && !logText.endsWith('\n')) return;
-
                 const span = document.createElement('span');
                 if (line.toLowerCase().includes('[error]') || line.toLowerCase().includes(' severe ')) span.className = 'log-line-error';
                 else if (line.toLowerCase().includes('[warn]') || line.toLowerCase().includes(' warning ')) span.className = 'log-line-warn';
@@ -274,93 +358,100 @@
             if(autoScrollLogs) scrollToLogBottom();
         }
 
-        function scrollToLogBottom() { logOutputContainer.scrollTop = logOutputContainer.scrollHeight; }
-        logOutputContainer.addEventListener('scroll', function() {
-            autoScrollLogs = (this.scrollTop + this.clientHeight >= this.scrollHeight - 20);
+        function scrollToLogBottom() { 
+            if(logOutputContainer) logOutputContainer.scrollTop = logOutputContainer.scrollHeight; 
+        }
+        if(logOutputContainer) { // Event Listener nur hinzufügen, wenn Element existiert
+            logOutputContainer.addEventListener('scroll', function() { 
+                autoScrollLogs = (this.scrollTop + this.clientHeight >= this.scrollHeight - 20);
+            });
+        }
+        
+        liveLogToggleEl.addEventListener('change', function() { 
+            fetchInstanceLogs(false, !this.checked); 
         });
-
-        liveLogToggleEl.addEventListener('change', function() {
-            fetchInstanceLogs(false, !this.checked); // Kein Initial Load, forceSnapshot wenn Checkbox aus
-        });
-
+        
         function closeLogModal() {
-            logModal.classList.remove('active');
+            logModal.classList.remove('active'); 
             if (logEventSource) { logEventSource.close(); logEventSource = null; }
-            currentLogViewInstanceName = null;
-            logOutputEl.innerHTML = '';
+            currentLogViewInstanceName = null; 
+            logOutputEl.innerHTML = ''; 
             rconInputArea.style.display = 'none';
         }
 
         async function sendRconCommand() {
             if (!currentLogViewInstanceName) return;
             const command = rconCommandInput.value.trim();
-            if (!command) {
-                rconResponseOutput.textContent = 'Bitte Befehl eingeben.';
-                rconResponseOutput.style.color = '#facc15'; return;
+            if (!command) { 
+                rconResponseOutput.textContent = 'Bitte Befehl eingeben.'; 
+                rconResponseOutput.style.color = 'var(--warning-color)'; return; 
             }
-            rconResponseOutput.textContent = 'Sende...'; rconResponseOutput.style.color = '#9ca3af';
+            rconResponseOutput.textContent = 'Sende...'; rconResponseOutput.style.color = 'var(--text-color-tertiary)';
             const formData = new FormData(); formData.append('command', command);
             try {
                 const response = await fetch(`/send_rcon_command/${currentLogViewInstanceName}`, { method: 'POST', body: formData });
                 const result = await response.json();
                 if (result.status === 'success') {
-                    let formattedResponse = `> ${result.command}\n< ${result.response || '(Keine Antwort vom Server)'}`;
-                    formattedResponse = formattedResponse.replace(/§[0-9a-fk-or]/g, ''); // Farbcodes entfernen
-                    rconResponseOutput.textContent = formattedResponse;
-                    rconCommandInput.value = '';
+                    let formattedResponse = `> ${result.command}\n< ${result.response || '(Keine Server-Antwort)'}`;
+                    formattedResponse = formattedResponse.replace(/§[0-9a-fk-or]/g, '');
+                    rconResponseOutput.textContent = formattedResponse; rconCommandInput.value = '';
                     appendLogLines(`[RCON] ${formattedResponse.replace(/\n/g, '\n[RCON] ')}\n`);
-                } else {
-                    rconResponseOutput.textContent = `RCON Fehler: ${result.message}`; rconResponseOutput.style.color = '#f87171';
+                } else { 
+                    rconResponseOutput.textContent = `RCON Fehler: ${result.message}`; 
+                    rconResponseOutput.style.color = 'var(--destructive-color)'; 
                 }
-            } catch (error) {
-                rconResponseOutput.textContent = 'Netzwerkfehler RCON: ' + error.message; rconResponseOutput.style.color = '#f87171';
+            } catch (error) { 
+                rconResponseOutput.textContent = 'Netzwerkfehler RCON: ' + error.message; 
+                rconResponseOutput.style.color = 'var(--destructive-color)';
             }
         }
         rconCommandInput.addEventListener('keypress', function(event) { if (event.key === 'Enter') { event.preventDefault(); sendRconCommand(); } });
 
         // --- Instanz Aktionen (Start, Stop, Restart, Delete) ---
         async function handleInstanceAction(action, instanceName) {
-            console.log(`handleInstanceAction: ${action}, ${instanceName}, Type: ${typeof instanceName}`); // DEBUG
-            if (typeof instanceName !== 'string' || !instanceName) {
-                displayMessage('Fehler: Ungültiger Instanzname für Aktion.', 'error');
-                console.error("Ungültiger Instanzname:", instanceName);
-                return;
+            console.log(`handleInstanceAction: ${action}, ${instanceName}, Type: ${typeof instanceName}`);
+            if (typeof instanceName !== 'string' || !instanceName) { 
+                displayMessage('Fehler: Ungültiger Instanzname.', 'error'); 
+                console.error("Ungültiger Instanzname:", instanceName); return; 
             }
-
-            const buttonId = `${action}_${instanceName}`; // Für Stop, Restart, etc.
-            const button = document.getElementById(buttonId);
+            
+            // Versuche, den Button spezifischer zu finden, falls mehrere Aktionen den gleichen Text haben
+            const button = document.querySelector(`.actions-cell button[onclick*="'${action}', '${instanceName}'"]`);
             if(button) button.disabled = true;
 
-            let endpoint = '';
-            let confirmMessage = null;
+            let endpoint = ''; let confirmMessage1 = null; let confirmMessage2 = null; let method = 'POST'; let body = new FormData();
 
             switch(action) {
-                case 'stop': endpoint = '/stop_server'; break;
-                case 'restart': endpoint = '/restart_server'; break;
-                case 'quick_start': endpoint = '/quick_start_server'; break;
+                case 'stop': endpoint = '/stop_server'; body.append('instance_name', instanceName); break;
+                case 'restart': endpoint = '/restart_server'; body.append('instance_name', instanceName); break;
+                case 'quick_start': endpoint = '/quick_start_server'; body.append('instance_name', instanceName); break;
                 case 'delete':
-                    endpoint = `/delete_instance/${instanceName}`; // Delete hat Name in URL
-                    confirmMessage = `Bist du SICHER, dass du die Instanz '${instanceName}' und ALLE ihre Dateien (Welt, Konfigs etc.) unwiderruflich löschen möchtest?\n\nDieser Vorgang kann NICHT rückgängig gemacht werden!`;
-                    const confirmMessage2 = `LETZTE WARNUNG: Bist du absolut sicher, dass du '${instanceName}' löschen willst?`;
-                    if (!confirm(confirmMessage) || !confirm(confirmMessage2)) {
-                        if(button) button.disabled = false; return;
+                    endpoint = `/delete_instance/${instanceName}`;
+                    confirmMessage1 = `Bist du SICHER, dass du die Instanz '${instanceName}' und ALLE ihre Dateien (Welt, Konfigs etc.) unwiderruflich löschen möchtest?\n\nDieser Vorgang kann NICHT rückgängig gemacht werden!`;
+                    confirmMessage2 = `LETZTE WARNUNG für '${instanceName}'! Wirklich löschen?`;
+                    if (!confirm(confirmMessage1) || !confirm(confirmMessage2)) { 
+                        if(button) button.disabled = false; return; 
                     }
+                    body = null; // Kein Body für Delete mit Name in URL per Konvention
                     break;
-                default: displayMessage('Unbekannte Aktion', 'error'); if(button) button.disabled = false; return;
+                default: 
+                    displayMessage('Unbekannte Aktion: ' + action, 'error'); 
+                    if(button) button.disabled = false; return;
             }
 
             displayMessage(`Aktion '${action}' für '${instanceName}' wird ausgeführt...`, 'info');
-            const formData = new FormData();
-            if (action !== 'delete') formData.append('instance_name', instanceName); // Delete hat Name in URL
-
             try {
-                const response = await fetch(endpoint, { method: 'POST', body: (action !== 'delete' ? formData : null) });
+                const fetchOptions = { method: method };
+                if (body) fetchOptions.body = body; // Body nur hinzufügen, wenn vorhanden
+
+                const response = await fetch(endpoint, fetchOptions);
                 const result = await response.json();
                 displayMessage(result.message, result.status);
             } catch (error) {
                 displayMessage(`Netzwerkfehler bei Aktion '${action}': ${error.message}`, 'error');
             } finally {
-                if(button && action !== 'delete') { // Löschen-Button ist weg nach Refresh
+                // Button wieder aktivieren, falls er noch existiert (wichtig bei Delete)
+                if(button && document.body.contains(button)) {
                     button.disabled = false;
                 }
                 refreshStatuses();
@@ -375,67 +466,60 @@
                 const statuses = await response.json();
                 updateInstanceTable(statuses);
             } catch (error) {
-                console.error("Fehler beim Abrufen des Serverstatus:", error);
+                console.error("Fehler Serverstatus:", error);
                 const tableBody = document.getElementById('instanceTableBody');
-                if (!tableBody.querySelector('tr[data-instance-name]')) { // Nur Fehler anzeigen, wenn Tabelle wirklich leer ist
-                    tableBody.innerHTML = `<tr><td colspan="3" class="error" style="text-align:center;">Fehler beim Laden der Status: ${error.message}</td></tr>`;
-                } else { displayMessage(`Status-Update fehlgeschlagen: ${error.message}`, 'warning'); }
+                if (!tableBody.querySelector('tr[data-instance-name]')) {
+                    tableBody.innerHTML = `<tr><td colspan="3" class="message error" style="text-align:center;">Fehler Status: ${error.message}</td></tr>`;
+                } else { 
+                    displayMessage(`Status-Update fehlgeschlagen: ${error.message}`, 'warning'); 
+                }
             }
         }
 
         function updateInstanceTable(statuses) {
             const tableBody = document.getElementById('instanceTableBody');
-            const existingRowElements = new Map();
-            tableBody.querySelectorAll('tr[data-instance-name]').forEach(row => {
-                existingRowElements.set(row.dataset.instanceName, row);
-            });
+            const existingRows = new Map(Array.from(tableBody.querySelectorAll('tr[data-instance-name]')).map(row => [row.dataset.instanceName, row]));
             const currentInstanceNamesInStatus = new Set(Object.keys(statuses));
+            
+            const initialOrErrorRow = tableBody.querySelector('tr:not([data-instance-name])');
+            if (initialOrErrorRow && Object.keys(statuses).length > 0) initialOrErrorRow.remove();
 
             if (Object.keys(statuses).length === 0 && !tableBody.querySelector('tr[data-instance-name]')) {
-                 tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 20px;">Keine Instanzen konfiguriert oder gefunden.</td></tr>`;
+                 tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 30px; color: var(--text-color-tertiary);">Keine Instanzen konfiguriert oder gefunden.</td></tr>`;
                  return;
             }
-            // Entferne Fehlerzeile, falls vorhanden und Status erfolgreich geladen
-            const errorRow = tableBody.querySelector('tr:not([data-instance-name])'); // Einfacher Selektor für Nicht-Daten-Zeilen
-            if (errorRow && Object.keys(statuses).length > 0) errorRow.remove();
 
-
-            for (const instanceNameStr in statuses) { // instanceNameStr ist hier der String-Schlüssel
-                const data = statuses[instanceNameStr];
-                let row = existingRowElements.get(instanceNameStr);
-
+            for (const instanceNameStr in statuses) {
+                const data = statuses[instanceNameStr]; 
+                let row = existingRows.get(instanceNameStr);
                 if (!row) {
                     row = tableBody.insertRow(); row.dataset.instanceName = instanceNameStr;
-                    row.insertCell().textContent = instanceNameStr;
+                    row.insertCell().textContent = instanceNameStr; 
                     row.insertCell().className = 'status-cell';
-                    row.insertCell().className = 'actions-cell';
-                    existingRowElements.set(instanceNameStr, row); // Füge neue Zeile zur Map hinzu
+                    row.insertCell().className = 'actions-cell'; 
+                    existingRows.set(instanceNameStr, row); // Wichtig: Neue Zeile zur Map hinzufügen
                 }
                 row.cells[1].textContent = data.status_text;
                 const actionCell = row.cells[2]; actionCell.innerHTML = ''; // Alte Buttons entfernen
 
                 if (data.is_running_managed) {
-                    actionCell.innerHTML += `<button id="stop_${instanceNameStr}" class="action-btn stop" onclick="handleInstanceAction('stop', '${instanceNameStr}')">Stop</button> `;
-                    actionCell.innerHTML += `<button id="restart_${instanceNameStr}" class="action-btn restart" onclick="handleInstanceAction('restart', '${instanceNameStr}')">Neustart</button> `;
+                    actionCell.innerHTML += `<button class="action-btn destructive" onclick="handleInstanceAction('stop', '${instanceNameStr}')">Stop</button> `;
+                    actionCell.innerHTML += `<button class="action-btn warning" onclick="handleInstanceAction('restart', '${instanceNameStr}')">Neustart</button> `;
                 } else if (data.has_config) {
-                    actionCell.innerHTML += `<button id="quick_start_${instanceNameStr}" class="action-btn" onclick="handleInstanceAction('quick_start', '${instanceNameStr}')">Schnellstart</button> `;
+                    actionCell.innerHTML += `<button class="action-btn" onclick="handleInstanceAction('quick_start', '${instanceNameStr}')">Schnellstart</button> `;
                 }
                 if (data.log_exists) {
                     actionCell.innerHTML += `<button class="action-btn logs" onclick="openLogModal('${instanceNameStr}', ${data.rcon_available})">Logs</button> `;
                 }
-                actionCell.innerHTML += `<button id="delete_${instanceNameStr}" class="action-btn delete" onclick="handleInstanceAction('delete', '${instanceNameStr}')">Löschen</button>`;
+                actionCell.innerHTML += `<button class="action-btn destructive" onclick="handleInstanceAction('delete', '${instanceNameStr}')">Löschen</button>`;
             }
             // Zeilen für nicht mehr existierende Instanz-Ordner entfernen
-            existingRowElements.forEach((row, name) => {
-                if (!currentInstanceNamesInStatus.has(name)) row.remove();
+            existingRows.forEach((row, name) => { 
+                if (!currentInstanceNamesInStatus.has(name)) row.remove(); 
             });
         }
-
-        // --- Initialisierung ---
-        document.addEventListener('DOMContentLoaded', () => {
-            refreshStatuses();
-            setInterval(refreshStatuses, 10000); // Alle 10 Sekunden
-        });
+        
+        // Initialisierung des Dark Mode Listeners ist oben im DOMContentLoaded
         window.addEventListener('click', function(event) { if (event.target == logModal) closeLogModal(); });
 
     </script>

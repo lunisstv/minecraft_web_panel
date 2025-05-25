@@ -1,37 +1,61 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de"> <!-- Klasse 'dark-mode' wird hier per JS gesetzt -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Minecraft Server Panel</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script>
+        // Initialen Dark Mode basierend auf localStorage oder OS-Präferenz setzen
+        (function() {
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const storedTheme = localStorage.getItem('theme');
+            if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
+                document.documentElement.classList.add('dark-mode');
+            } else {
+                document.documentElement.classList.remove('dark-mode');
+            }
+        })();
+    </script>
 </head>
-<body>
-    <div class="login-body">
-        <div class="login-container">
-            <h1>Server Panel Login</h1>
-            <p>Bitte anmelden, um fortzufahren.</p>
+<body class="login-body"> <!-- Die Klasse wird hier per JS dynamisch auch gesetzt -->
+    <div class="login-card">
+        <h1>Server Panel Login</h1>
+        <p>Bitte anmelden, um fortzufahren.</p>
 
+        <div class="messages-container">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
-                    <ul class="flash-messages">
-                    {% for category, message in messages %}
-                        <li class="{{ category }}">{{ message }}</li>
+                     {% for category, message_text in messages %}
+                        <div class="message {{ category }}">{{ message_text }}</div>
                     {% endfor %}
-                    </ul>
                 {% endif %}
             {% endwith %}
-
-            <form method="POST" action="{{ url_for('login_route', next=request.args.get('next')) }}">
-                <div>
-                    <input type="text" id="username" name="username" placeholder="Benutzername" required>
-                </div>
-                <div>
-                    <input type="password" id="password" name="password" placeholder="Passwort" required>
-                </div>
-                <button type="submit">Login</button>
-            </form>
         </div>
+
+        <form method="POST" action="{{ url_for('login_route', next=request.args.get('next')) }}">
+            <div>
+                <input type="text" id="username" name="username" placeholder="Benutzername" required>
+            </div>
+            <div>
+                <input type="password" id="password" name="password" placeholder="Passwort" required>
+            </div>
+            <button type="submit">Login</button>
+        </form>
     </div>
+
+    <!-- JavaScript, um die Klasse auch auf den body anzuwenden, falls nötig und für Konsistenz -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const currentHtml = document.documentElement;
+            const currentBody = document.body;
+            if (currentHtml.classList.contains('dark-mode')) {
+                currentBody.classList.add('dark-mode');
+            } else {
+                currentBody.classList.remove('dark-mode');
+            }
+            // Kein Theme-Schalter auf der Login-Seite, also keine weiteren Listener hier.
+        });
+    </script>
 </body>
 </html>

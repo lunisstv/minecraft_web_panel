@@ -1,362 +1,435 @@
-/* static/style.css */
+/* static/style.css - Apple-inspired Modern Design */
 
-/* Allgemeine Stile & Login-Seite */
-body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    margin: 0;
-    background-color: #f0f2f5;
-    color: #1c1e21;
-    line-height: 1.5;
+/* --- Globale Variablen und Resets --- */
+:root {
+    --system-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --background-color: #f2f2f7;
+    --content-background: #ffffff;
+    --secondary-content-background: #f9f9fb; /* Sehr helles Grau */
+    --text-color-primary: #1d1d1f;
+    --text-color-secondary: #6e6e73;
+    --text-color-tertiary: #86868b;
+    --accent-color: #007aff;
+    --destructive-color: #ff3b30;
+    --warning-color: #ff9500;
+    --success-color: #34c759;
+    --border-color: #d1d1d6;
+    --border-radius-small: 8px;
+    --border-radius-medium: 12px;
+    --shadow-depth-1: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.08); /* Dezenter Schatten für Light */
+    --shadow-depth-2: 0 3px 6px rgba(0,0,0,0.06), 0 3px 6px rgba(0,0,0,0.08);
+    --shadow-depth-3: 0 10px 20px rgba(0,0,0,0.05), 0 6px 6px rgba(0,0,0,0.07);
+
+    /* Spezifische Log Modal Farben (Light - falls abweichend) */
+    --log-modal-bg: #1e1e1e;
+    --log-modal-text: #d4d4d4;
+    --log-modal-header-border: #333;
+    --log-modal-title-text: #f0f0f0;
+    --log-modal-controls-text: #b0b0b0;
+    --log-modal-controls-button-bg: #383838;
+    --log-modal-controls-button-hover-bg: #4a4a4a;
+    --log-modal-rcon-bg: #252526;
+    --log-modal-rcon-input-bg: #3c3c3c;
+    --log-modal-rcon-input-border: #505050;
+    --log-modal-rcon-response-text: #aaa;
+    --log-modal-rcon-response-border: #333;
 }
 
-.login-body { /* Speziell für den Login-Body, um Zentrierung zu ermöglichen */
+body.dark-mode {
+    --background-color: #1c1c1e; /* Dunkler Hintergrund */
+    --content-background: #2c2c2e; /* Dunkle Karten */
+    --secondary-content-background: #3a3a3c; /* Noch dunkler für abgesetzte Bereiche */
+    --text-color-primary: #f2f2f7; /* Heller Text */
+    --text-color-secondary: #a0a0a5; /* Helleres Grau */
+    --text-color-tertiary: #8e8e93; /* Noch helleres Grau */
+    --accent-color: #0a84ff; /* Leicht helleres Blau für Dark Mode */
+    --destructive-color: #ff453a;
+    --warning-color: #ff9f0a;
+    --success-color: #30d158;
+    --border-color: #48484a; /* Dunklere Trennlinien */
+    --shadow-depth-1: 0 1px 2px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3); /* Stärkere Schatten im Dark Mode, um Tiefe zu erzeugen */
+    --shadow-depth-2: 0 4px 8px rgba(0,0,0,0.25), 0 4px 8px rgba(0,0,0,0.35);
+    --shadow-depth-3: 0 12px 24px rgba(0,0,0,0.25), 0 8px 12px rgba(0,0,0,0.35);
+
+    /* Log Modal Farben für Dark Mode (sind schon dunkel, evtl. anpassen) */
+    /* Diese sind schon für einen Dark-Mode-ähnlichen Kontext des Modals, ggf. anpassen falls das globale Dark Theme andere Nuancen erfordert */
+    --log-modal-bg: #1a1a1d; /* Etwas dunkler als Karten, wenn Panel im Dark Mode ist */
+    --log-modal-text: #e0e0e0;
+    --log-modal-header-border: #404040;
+    --log-modal-title-text: #ffffff;
+    --log-modal-controls-text: #c0c0c0;
+    --log-modal-controls-button-bg: #454545;
+    --log-modal-controls-button-hover-bg: #555555;
+    --log-modal-rcon-bg: #2e2e31;
+    --log-modal-rcon-input-bg: #424245;
+    --log-modal-rcon-input-border: #5e5e61;
+    --log-modal-rcon-response-text: #b0b0b0;
+    --log-modal-rcon-response-border: #404040;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--system-font);
+    background-color: var(--background-color);
+    color: var(--text-color-primary);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease; /* Sanfter Übergang */
+}
+
+.login-body {
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
 }
 
-.container, .login-container {
+/* --- Container und Karten --- */
+.main-container {
+    max-width: 1200px;
+    margin: 30px auto;
     padding: 20px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.1);
 }
 
-.container { /* Hauptpanel-Container */
-    max-width: 1100px;
-    margin: 20px auto;
+.card {
+    background-color: var(--content-background); /* Ersetzt #ffffff */
+    border-radius: var(--border-radius-medium);
+    box-shadow: var(--shadow-depth-1);
+    padding: 25px;
+    margin-bottom: 30px;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.login-container { /* Login-Formular-Container */
+.card:last-child {
+    margin-bottom: 0;
+}
+
+.login-card {
+    background-color: var(--content-background);
+    border-radius: var(--border-radius-medium);
+    box-shadow: var(--shadow-depth-2);
+    padding: 40px 50px;
     width: 100%;
-    max-width: 400px;
+    max-width: 420px;
     text-align: center;
-    padding: 40px; /* Mehr Padding für Login */
 }
 
-
-h1, h2, h3 {
-    color: #1c1e21;
-    margin-top: 0;
+/* --- Typografie --- */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-color-primary); /* Ersetzt #1c1e21 */
+    font-weight: 600;
 }
 
 h1 {
-    font-size: 2em;
-    margin-bottom: 0.5em;
-}
-
-.login-container h1 {
-    font-size: 1.8em;
+    font-size: 2.2em; /* Größerer Haupttitel */
+    font-weight: 700;
     margin-bottom: 10px;
+}
+.login-card h1 {
+    font-size: 1.8em;
+    margin-bottom: 15px;
 }
 
 h2 {
-    font-size: 1.5em;
-    margin-top: 1.5em;
-    margin-bottom: 0.75em;
-    padding-bottom: 0.3em;
-    border-bottom: 1px solid #ccd0d5;
+    font-size: 1.6em;
+    margin-top: 40px;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    /* Keine harte Border, eher durch Abstand und Kontext trennen */
+}
+.card h2:first-child {
+    margin-top: 0;
 }
 
-.login-container p {
-    font-size: 0.95em;
-    color: #606770;
-    margin-bottom: 25px;
-}
 
 label {
     display: block;
-    margin-top: 1em;
-    margin-bottom: 0.5em;
-    font-weight: 600;
+    margin-top: 15px;
+    margin-bottom: 8px;
+    font-weight: 500; /* Medium weight */
     font-size: 0.9em;
-    color: #606770;
+    color: var(--text-color-secondary);
 }
 
+small, .form-hint {
+    font-size: 0.8em;
+    color: var(--text-color-tertiary);
+    display: block;
+    margin-top: -5px;
+    margin-bottom: 10px;
+}
+
+/* --- Formularelemente --- */
 input[type="text"],
 input[type="password"],
 select,
 textarea {
     width: 100%;
-    padding: 10px;
-    margin-bottom: 0.5em;
-    border: 1px solid #ccd0d5;
-    border-radius: 6px;
-    box-sizing: border-box;
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    background-color: var(--secondary-content-background); /* Leicht abgesetzter Hintergrund */
+    border-radius: var(--border-radius-small);
     font-size: 1em;
+    color: var(--text-color-primary);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-
-.login-container input[type="text"],
-.login-container input[type="password"] {
-    padding: 12px; /* Etwas mehr Padding für Login-Felder */
-    margin-bottom: 15px;
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2); /* Fokusschatten */
 }
-
 
 input[type="checkbox"] {
-    margin-right: 0.5em;
+    margin-right: 8px;
     vertical-align: middle;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent-color); /* Färbt die Checkbox selbst */
+}
+.checkbox-label { /* Für das Label neben der Checkbox */
+    display: inline-flex;
+    align-items: center;
+    font-weight: normal;
+    color: var(--text-color-primary);
+    font-size: 0.95em;
 }
 
+
 textarea {
-    min-height: 80px;
+    min-height: 100px;
     resize: vertical;
 }
 
+/* --- Buttons --- */
 button, .button {
-    background-color: #1877f2;
+    background-color: var(--accent-color);
     color: white;
     padding: 10px 20px;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--border-radius-small);
     cursor: pointer;
     font-size: 1em;
-    font-weight: 600;
+    font-weight: 500; /* Medium */
     text-decoration: none;
     display: inline-block;
-    margin-right: 8px;
-    margin-top: 5px;
-    transition: background-color 0.2s ease-in-out;
+    margin-right: 10px;
+    margin-top: 10px;
+    transition: background-color 0.15s ease-in-out, transform 0.1s ease;
+    text-align: center;
 }
-
 button:hover, .button:hover {
-    background-color: #166fe5;
+    background-color: #0060cc; /* Dunkleres Blau beim Hover */
+}
+button:active, .button:active {
+    transform: scale(0.98); /* Leichter Klick-Effekt */
+}
+button:disabled, .button:disabled {
+    background-color: #b5b5b7;
+    color: #f2f2f2;
+    cursor: not-allowed;
 }
 
-.login-container button {
+.login-card button { /* Login Button */
     width: 100%;
-    padding: 12px;
-    font-size: 1.1em;
+    padding: 14px;
+    font-size: 1.05em;
+    margin-top: 20px;
 }
 
-button.action-btn {
-    font-size: 0.85em;
-    padding: 6px 12px;
+button.action-btn { /* Kleinere Aktionsbuttons in Tabellen etc. */
+    font-size: 0.875em;
+    padding: 7px 14px;
+    font-weight: 500;
+}
+button.action-btn.secondary {
+    background-color: var(--secondary-content-background);
+    color: var(--accent-color);
+    border: 1px solid var(--border-color); /* Leichter Rand für sekundäre Buttons */
+}
+button.action-btn.secondary:hover {
+    background-color: #e8e8ed;
 }
 
-button.stop, button.delete {
-    background-color: #fa383e;
-}
-button.stop:hover, button.delete:hover {
-    background-color: #e02020;
-}
 
-button.logs {
-    background-color: #17a2b8;
-}
-button.logs:hover {
-    background-color: #138496;
-}
+button.destructive, .button.destructive { background-color: var(--destructive-color); }
+button.destructive:hover, .button.destructive:hover { background-color: #d6281e; }
 
-button.restart {
-    background-color: #ffc107;
-    color: #212529; /* Dunkler Text für gelben Button */
-}
-button.restart:hover {
-    background-color: #e0a800;
-}
+button.warning, .button.warning { background-color: var(--warning-color); color: white; }
+button.warning:hover, .button.warning:hover { background-color: #e08100; }
 
-/* Flash Nachrichten (für Login und Panel) */
-.flash-messages-container { /* Ein Container für die Nachrichten im Hauptpanel */
-    margin-top: 1.5em;
-    margin-bottom: 1em;
+/* --- Nachrichten/Alerts --- */
+.messages-container {
+    margin-bottom: 20px;
 }
-#message, .flash-messages ul { /* #message ist für JS-Nachrichten, .flash-messages für serverseitige */
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-#message:not(:empty), .flash-messages li { /* Stil nur anwenden, wenn Inhalt da ist */
-    padding: 12px;
-    margin-bottom: 10px;
-    border-radius: 6px;
+.message {
+    padding: 12px 18px;
+    margin-bottom: 15px;
+    border-radius: var(--border-radius-small);
     font-size: 0.95em;
+    display: none; /* Wird per JS angezeigt */
+    border-width: 1px;
+    border-style: solid;
 }
-/* #message Klassen werden per JS gesetzt */
-.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; display: block !important; }
-.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; display: block !important; }
-.warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; display: block !important; }
-.info { background-color: #cfe2ff; color: #084298; border: 1px solid #b6d4fe; display: block !important;}
+.message.success { background-color: #e6f6e9; color: #206a32; border-color: var(--success-color); display: block !important;}
+.message.error   { background-color: #ffebee; color: #c62828; border-color: var(--destructive-color); display: block !important;}
+.message.warning { background-color: #fff8e1; color: #b47400; border-color: var(--warning-color); display: block !important;}
+.message.info    { background-color: #e7f3fe; color: #0c549c; border-color: var(--accent-color); display: block !important;}
 
 
-/* Instanz-Tabelle */
+/* --- Instanz-Tabelle --- */
 .instance-list table {
     width: 100%;
-    border-collapse: collapse;
-    margin-top: 1em;
+    border-collapse: separate; /* Für abgerundete Ecken an der Tabelle selbst */
+    border-spacing: 0;
+    margin-top: 20px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    overflow: hidden; /* Damit Border-Radius an Ecken greift */
 }
 .instance-list th, .instance-list td {
-    border: 1px solid #ccd0d5;
-    padding: 10px 12px;
+    padding: 12px 15px;
     text-align: left;
     font-size: 0.95em;
+    border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
 }
+.instance-list tr:last-child td {
+    border-bottom: none; /* Keine untere Border für die letzte Zeile */
+}
 .instance-list th {
-    background-color: #f5f6f7;
-    font-weight: 600;
+    background-color: var(--secondary-content-background);
+    font-weight: 500;
+    color: var(--text-color-secondary);
 }
 .actions-cell button {
-    margin-bottom: 5px;
+    margin-right: 6px;
+    margin-bottom: 6px;
+}
+.actions-cell button:last-child {
+    margin-right: 0;
 }
 
-/* Log Modal Stile */
-#logModal {
-    display: none; /* Wird per JS zu 'flex' */
-    position: fixed;
-    z-index: 1050;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto; /* Erlaubt Scrollen, wenn Modal größer als Viewport */
-    background-color: rgba(0,0,0,0.7);
-    justify-content: center;
-    align-items: center;
-}
-#logModal.active {
-    display: flex;
-}
-#logModalContentWrapper {
-    background-color: #282c34; /* Dunkler Hintergrund für Logs */
-    color: #abb2bf; /* Heller Text für Logs */
-    border-radius: 8px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-    width: 90%;
-    max-width: 950px;
-    min-height: 70vh; /* Nimmt mindestens 70% der Viewport-Höhe ein */
-    max-height: 85vh; /* Aber nicht mehr als 85% */
-    display: flex;
-    flex-direction: column;
-    margin: auto; /* Zentriert auch bei overflow: auto des Elternelements */
-}
-#logModalHeader {
-    padding: 15px 20px;
-    border-bottom: 1px solid #3e4451;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-shrink: 0; /* Header soll nicht schrumpfen */
-}
-#logModalTitle {
-    margin: 0;
-    font-size: 1.3em;
-    color: #d1d5db;
-}
-.log-controls {
-    display: flex;
-    align-items: center;
-}
-.log-controls label { /* Etiketten im Log-Modal-Header */
-    color: #9ca3af;
-    margin-right: 10px;
-    margin-top:0; margin-bottom:0; /* Überschreibe generelles Label-Margin */
-    font-size: 0.9em;
-    display: inline-flex; /* Für vertikale Ausrichtung mit Checkbox */
-    align-items: center;
-}
-.log-controls input[type="checkbox"] {
-    margin-right: 5px;
-}
-.log-controls button { /* Kleinere Buttons im Log-Modal-Header */
-    font-size:0.8em;
-    padding: 5px 10px;
-    background-color: #4b5563;
-    margin-left:10px;
-}
-.log-controls button:hover {
-    background-color: #6b7280;
-}
-.close-button { /* Schließen-Kreuz */
-    color: #9ca3af;
-    font-size: 2em;
-    line-height:1; /* Verhindert extra Höhe */
-    font-weight: bold;
-    cursor: pointer;
-    background: none;
-    border: none;
-    padding: 0 5px; /* Etwas Klickfläche */
-}
-.close-button:hover {
-    color: #e5e7eb;
-}
-#logOutputContainer {
-    flex-grow: 1; /* Nimmt verfügbaren Platz ein */
-    overflow-y: auto; /* Scrollbar, wenn Inhalt zu groß */
-    padding: 10px 20px;
-}
-#logOutput {
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-    font-size: 0.875em;
-    white-space: pre-wrap; /* Zeilenumbruch für lange Zeilen */
-    word-break: break-all; /* Umbruch für sehr lange Wörter/Strings ohne Leerzeichen */
-    margin: 0;
-    line-height: 1.6;
-}
-.log-line-error { color: #f87171; /* Helleres Rot für dunklen Hintergrund */ }
-.log-line-warn { color: #facc15; /* Helleres Gelb */ }
+
+/* --- Log Modal --- */
+#logModal { display: none; position: fixed; z-index: 1050; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; background-color: rgba(0,0,0,0.4); /* Dunklerer Overlay */ justify-content: center; align-items: center; }
+#logModal.active { display: flex; }
+#logModalContentWrapper { background-color: var(--log-modal-bg); /* Nutzt die Modal-spezifische Variable */ color: var(--log-modal-text); background-color: #1e1e1e; /* VSCode Dark Theme ähnlich */ color: #d4d4d4; border-radius: var(--border-radius-medium); box-shadow: var(--shadow-depth-3); width: 90%; max-width: 1000px; height: 85vh; display: flex; flex-direction: column; margin: auto; }
+#logModalHeader { border-bottom: 1px solid var(--log-modal-header-border); padding: 18px 25px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+#logModalTitle { color: var(--log-modal-title-text); margin: 0; font-size: 1.25em; font-weight: 600; color: #f0f0f0;}
+.log-controls label { color: var(--log-modal-controls-text); }
+.log-controls button { background-color: var(--log-modal-controls-button-bg); color: var(--log-modal-title-text); /* Hellerer Text für Button */ }
+.log-controls button:hover { background-color: var(--log-modal-controls-button-hover-bg); }
+.close-button { color: var(--log-modal-controls-text); } /* Gleiche Farbe wie Label */
+.close-button:hover { color: var(--log-modal-title-text); } /* Heller beim Hover */
+.close-button { color: #888; font-size: 1.8em; line-height:1; font-weight: bold; cursor: pointer; background: none; border: none; padding: 0 8px; }
+.close-button:hover { color: #ccc; }
+#logOutputContainer { flex-grow: 1; overflow-y: auto; padding: 15px 25px; }
+#logOutput { font-family: "Menlo", "Monaco", "Consolas", "Courier New", monospace; font-size: 0.9em; white-space: pre-wrap; word-break: break-word; margin: 0; line-height: 1.7; }
+.log-line-error { color: #ff8080; }
+.log-line-warn { color: #ffd700; }
 
 #rconInputArea {
-    padding: 15px 20px;
-    border-top: 1px solid #3e4451;
-    display: none; /* Wird per JS zu 'flex' */
-    flex-wrap: wrap; /* Erlaubt Umbruch, falls nicht genug Platz */
-    align-items: center;
-    flex-shrink: 0; /* Dieser Bereich soll nicht schrumpfen */
+    border-top: 1px solid var(--log-modal-header-border);
+    background-color: var(--log-modal-rcon-bg);
 }
+#rconInputArea button { width: auto; padding: 10px 18px; flex-shrink: 0; background-color: var(--accent-color); }
 #rconCommandInput {
-    flex-grow: 1; /* Nimmt den meisten Platz ein */
-    min-width: 200px; /* Mindestbreite bevor der Button umbricht */
-    margin-right: 10px;
-    margin-bottom: 0; /* Kein unterer Rand, da in einer Zeile mit Button */
-    background-color: #1f2937; /* Dunkleres Feld für Kontrast */
-    color: #d1d5db;
-    border: 1px solid #4b5563;
-}
-#rconInputArea button { /* RCON Senden Button */
-    width: auto; /* Automatische Breite basierend auf Inhalt und Padding */
-    padding-left: 15px;
-    padding-right: 15px;
-    flex-shrink: 0; /* Button soll nicht schrumpfen */
+    background-color: var(--log-modal-rcon-input-bg);
+    color: var(--log-modal-text); /* Gleicher Text wie im Modal allgemein */
+    border: 1px solid var(--log-modal-rcon-input-border);
 }
 #rconResponseOutput {
-    font-family: 'SFMono-Regular', Consolas, monospace;
-    font-size: 0.85em;
-    margin-top: 10px;
-    max-height: 120px; /* Begrenzte Höhe mit Scrollbar */
-    overflow-y: auto;
-    background-color: #1f2937; /* Gleicher Hintergrund wie Input */
-    padding: 8px;
-    border-radius: 4px;
-    width: 100%; /* Volle Breite unter Input und Button */
-    white-space: pre-wrap;
-    color: #9ca3af;
-    box-sizing: border-box;
+    background-color: var(--log-modal-bg); /* Oder eine leicht andere Nuance */
+    color: var(--log-modal-rcon-response-text);
+    border: 1px solid var(--log-modal-rcon-response-border);
 }
 
-/* Header mit Logout */
+/* --- Header mit Logout --- */
 .panel-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    padding-bottom:10px;
-    border-bottom: 1px solid #ddd;
+    margin-bottom: 30px; /* Mehr Abstand nach unten */
+    padding-bottom:15px;
+    /* Kein harter Border, Trennung durch Abstand oder subtile Linie, falls nötig */
+}
+.panel-header h1 {
+    margin-bottom: 0; /* Titel direkt im Header */
 }
 .panel-header .user-info {
     text-align: right;
     font-size: 0.9em;
+    color: var(--text-color-secondary);
 }
 .panel-header .user-info strong {
-    color: #333;
+    color: var(--text-color-primary);
 }
-.panel-header .user-info .button { /* Logout Button im Header */
-    background-color:#6c757d;
-    font-size:0.9em; /* Etwas kleiner */
-    padding: 5px 10px;
-    margin-top:5px;
+.panel-header .user-info .button {
+    background-color: var(--secondary-content-background);
+    color: var(--accent-color);
+    font-size:0.9em;
+    padding: 6px 12px;
+    margin-top:8px;
+    border: 1px solid var(--border-color);
 }
 .panel-header .user-info .button:hover {
-    background-color: #5a6268;
+    background-color: #e8e8ed;
+}
+
+.theme-switch-wrapper {
+    display: flex;
+    align-items: center;
+    /* Positionierung des Schalters, z.B. oben rechts */
+}
+.theme-switch {
+    display: inline-block;
+    height: 24px; /* Kleinere Höhe für den Schalter */
+    position: relative;
+    width: 44px; /* Kleinere Breite */
+}
+.theme-switch input {
+    display:none;
+}
+.slider {
+    background-color: #ccc; /* Hintergrund des Schalters im Light Mode */
+    bottom: 0;
+    cursor: pointer;
+    left: 0;
+    position: absolute;
+    right: 0;
+    top: 0;
+    transition: .4s;
+    border-radius: 24px; /* Vollständig abgerundet */
+}
+body.dark-mode .slider {
+    background-color: var(--accent-color); /* Hintergrund des Schalters im Dark Mode */
+}
+.slider:before {
+    background-color: #fff; /* Knubbel des Schalters */
+    bottom: 3px; /* Anpassung für kleinere Höhe */
+    content: "";
+    height: 18px; /* Kleinerer Knubbel */
+    left: 3px;  /* Anpassung für kleinere Breite */
+    position: absolute;
+    transition: .4s;
+    width: 18px; /* Kleinerer Knubbel */
+    border-radius: 50%;
+}
+input:checked + .slider:before {
+    transform: translateX(20px); /* Anpassung für kleinere Breite */
+}
+.theme-switch-wrapper span {
+    margin-left: 8px;
+    font-size: 0.9em;
+    color: var(--text-color-secondary);
 }
