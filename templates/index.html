@@ -26,7 +26,7 @@
                 {% if logged_in_user %}
                     <div class="user-info">
                         Eingeloggt als: <strong>{{ logged_in_user }}</strong><br>
-                        <a href="{{ url_for('logout_route') }}" class="button">Logout</a>
+                        <a href="{{ url_for('auth_bp.logout_route') }}" class="button">Logout</a> <!-- Korrigierter url_for -->
                     </div>
                 {% endif %}
                 <div class="theme-switch-wrapper">
@@ -117,7 +117,7 @@
                     <option value="--eraseCache"></option>
                     <option value="--bonusChest"></option>
                     <option value="--jfrProfile"></option>
-                    <option value="--serverId YOUR_SERVER_ID"></option> <!-- Für z.B. Velocity -->
+                    <option value="--serverId YOUR_SERVER_ID"></option>
                     <option value="--maxPlayers 20"></option>
                     <option value="--online-mode true"></option>
                     <option value="--online-mode false"></option>
@@ -198,6 +198,21 @@
         let logEventSource = null;
         let autoScrollLogs = true;
 
+        // URLs serverseitig als Muster bereitstellen
+        const URLS = {
+            start_server: "{{ url_for('main_bp.start_server_route') }}",
+            stop_server: "{{ url_for('main_bp.stop_server_route_internal') }}",
+            restart_server: "{{ url_for('main_bp.restart_server_route_internal') }}",
+            quick_start_server: "{{ url_for('main_bp.quick_start_server_route') }}",
+            server_status: "{{ url_for('main_bp.server_status_route_internal') }}",
+            // Für Routen mit variablen Teilen im Pfad
+            delete_instance_pattern: "{{ url_for('main_bp.delete_instance_route_internal', instance_name='INSTANCE_NAME_PLACEHOLDER') }}",
+            get_logs_pattern: "{{ url_for('main_bp.get_logs_route', instance_name='INSTANCE_NAME_PLACEHOLDER') }}",
+            stream_logs_pattern: "{{ url_for('main_bp.stream_logs_route', instance_name='INSTANCE_NAME_PLACEHOLDER') }}",
+            send_rcon_command_pattern: "{{ url_for('main_bp.send_rcon_command_route', instance_name='INSTANCE_NAME_PLACEHOLDER') }}"
+        };
+
+
         // --- Dark Mode Toggle Logik ---
         const themeCheckbox = document.getElementById('theme-checkbox');
         const currentHtml = document.documentElement;
@@ -224,7 +239,7 @@
             } else if (prefersDark) {
                 applyTheme('dark');
             } else {
-                applyTheme('light');
+                applyTheme('light'); // Standard
             }
 
             if (themeCheckbox) {
@@ -235,12 +250,12 @@
                 });
             }
             
-            refreshStatuses();
-            setInterval(refreshStatuses, 10000);
+            refreshStatuses(); // Initialen Status laden
+            setInterval(refreshStatuses, 10000); // Periodisch aktualisieren
         });
         
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-            if (!localStorage.getItem('theme')) {
+            if (!localStorage.getItem('theme')) { // Nur OS-Präferenz anwenden, wenn Nutzer nicht explizit gewählt hat
                 applyTheme(event.matches ? 'dark' : 'light');
             }
         });
@@ -268,7 +283,7 @@
         useScreenCheckbox.addEventListener('change', function() {
             screenNameGroup.style.display = this.checked ? 'block' : 'none';
         });
-        screenNameGroup.style.display = useScreenCheckbox.checked ? 'block' : 'none';
+        screenNameGroup.style.display = useScreenCheckbox.checked ? 'block' : 'none'; // Initial
 
         serverForm.addEventListener('submit', async function(event) {
             event.preventDefault();
@@ -276,10 +291,9 @@
             startServerButton.textContent = "Verarbeite...";
             const formData = new FormData(serverForm);
             try {
-                const response = await fetch('/start_server', { method: 'POST', body: formData });
+                const response = await fetch(URLS.start_server, { method: 'POST', body: formData });
                 const result = await response.json();
                 displayMessage(result.message, result.status);
-                // if (result.status === 'success') serverForm.reset(); // Optional: Formular zurücksetzen
             } catch (error) {
                 displayMessage('Netzwerkfehler: ' + error.message, 'error');
             } finally {
@@ -304,7 +318,7 @@
             } else {
                 rconInputArea.style.display = 'none';
             }
-            fetchInstanceLogs(true, true);
+            fetchInstanceLogs(true, true); // isInitialLoad=true, forceSnapshot=true
         }
         
         function manualLogReload() {
@@ -318,11 +332,13 @@
             if (!currentLogViewInstanceName) return;
             if (logEventSource) { logEventSource.close(); logEventSource = null; }
 
+            const getLogsUrl = URLS.get_logs_pattern.replace('INSTANCE_NAME_PLACEHOLDER', encodeURIComponent(currentLogViewInstanceName));
+
             if (liveLogToggleEl.checked && !forceSnapshot) {
                 startLogStream(isInitialLoad);
             } else {
                 try {
-                    const response = await fetch(`/get_logs/${currentLogViewInstanceName}?lines=500`);
+                    const response = await fetch(`${getLogsUrl}?lines=500`);
                     const data = await response.json();
                     if (isInitialLoad || forceSnapshot) logOutputEl.innerHTML = '';
                     if (response.ok && !data.error) {
@@ -342,7 +358,9 @@
             if (logEventSource) { logEventSource.close(); logEventSource = null; }
             if (isInitialLoad) logOutputEl.innerHTML = 'Verbinde zum Log-Stream...\n';
             
-            logEventSource = new EventSource(`/stream_logs/${currentLogViewInstanceName}`);
+            const streamLogsUrl = URLS.stream_logs_pattern.replace('INSTANCE_NAME_PLACEHOLDER', encodeURIComponent(currentLogViewInstanceName));
+            
+            logEventSource = new EventSource(streamLogsUrl);
             logEventSource.onmessage = function(event) {
                 const newLines = event.data.replace(/\\n/g, '\n');
                 appendLogLines(newLines);
@@ -398,8 +416,11 @@
             }
             rconResponseOutput.textContent = 'Sende...'; rconResponseOutput.style.color = 'var(--text-color-tertiary)';
             const formData = new FormData(); formData.append('command', command);
+
+            const sendRconUrl = URLS.send_rcon_command_pattern.replace('INSTANCE_NAME_PLACEHOLDER', encodeURIComponent(currentLogViewInstanceName));
+
             try {
-                const response = await fetch(`/send_rcon_command/${currentLogViewInstanceName}`, { method: 'POST', body: formData });
+                const response = await fetch(sendRconUrl, { method: 'POST', body: formData });
                 const result = await response.json();
                 if (result.status === 'success') {
                     let formattedResponse = `> ${result.command}\n< ${result.response || '(Keine Server-Antwort)'}`;
@@ -417,6 +438,7 @@
         }
         rconCommandInput.addEventListener('keypress', function(event) { if (event.key === 'Enter') { event.preventDefault(); sendRconCommand(); } });
 
+        // --- Instanz Aktionen (Start, Stop, Restart, Delete) ---
         async function handleInstanceAction(action, instanceName) {
             console.log(`handleInstanceAction: ${action}, ${instanceName}, Type: ${typeof instanceName}`);
             if (typeof instanceName !== 'string' || !instanceName) { 
@@ -427,14 +449,27 @@
             const button = document.querySelector(`.actions-cell button[onclick*="'${action}', '${instanceName}'"]`);
             if(button) button.disabled = true;
 
-            let endpoint = ''; let confirmMessage1 = null; let confirmMessage2 = null; let method = 'POST'; let body = new FormData();
+            let endpoint = ''; 
+            let confirmMessage1 = null; 
+            let confirmMessage2 = null; 
+            let method = 'POST'; 
+            let body = new FormData();
 
             switch(action) {
-                case 'stop': endpoint = '/stop_server'; body.append('instance_name', instanceName); break;
-                case 'restart': endpoint = '/restart_server'; body.append('instance_name', instanceName); break;
-                case 'quick_start': endpoint = '/quick_start_server'; body.append('instance_name', instanceName); break;
+                case 'stop': 
+                    endpoint = URLS.stop_server; 
+                    body.append('instance_name', instanceName); 
+                    break;
+                case 'restart': 
+                    endpoint = URLS.restart_server; 
+                    body.append('instance_name', instanceName); 
+                    break;
+                case 'quick_start': 
+                    endpoint = URLS.quick_start_server; 
+                    body.append('instance_name', instanceName); 
+                    break;
                 case 'delete':
-                    endpoint = `/delete_instance/${instanceName}`;
+                    endpoint = URLS.delete_instance_pattern.replace('INSTANCE_NAME_PLACEHOLDER', encodeURIComponent(instanceName));
                     confirmMessage1 = `Bist du SICHER, dass du die Instanz '${instanceName}' und ALLE ihre Dateien (Welt, Konfigs etc.) unwiderruflich löschen möchtest?\n\nDieser Vorgang kann NICHT rückgängig gemacht werden!`;
                     confirmMessage2 = `LETZTE WARNUNG für '${instanceName}'! Wirklich löschen?`;
                     if (!confirm(confirmMessage1) || !confirm(confirmMessage2)) { 
@@ -465,16 +500,18 @@
             }
         }
 
+        // --- Status Aktualisierung der Tabelle ---
         async function refreshStatuses() {
             try {
-                const response = await fetch('/server_status');
+                const response = await fetch(URLS.server_status);
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 const statuses = await response.json();
                 updateInstanceTable(statuses);
             } catch (error) {
                 console.error("Fehler Serverstatus:", error);
                 const tableBody = document.getElementById('instanceTableBody');
-                if (!tableBody.querySelector('tr[data-instance-name]')) {
+                const hasDataRows = tableBody.querySelector('tr[data-instance-name]');
+                if (!hasDataRows && tableBody.rows.length <= 1) {
                     tableBody.innerHTML = `<tr><td colspan="4" class="message error" style="text-align:center;">Fehler Status: ${error.message}</td></tr>`;
                 } else { 
                     displayMessage(`Status-Update fehlgeschlagen: ${error.message}`, 'warning'); 
@@ -502,15 +539,14 @@
                     row = tableBody.insertRow(); row.dataset.instanceName = instanceNameStr;
                     row.insertCell().textContent = instanceNameStr; 
                     row.insertCell().className = 'status-cell';
-                    row.insertCell().className = 'port-cell';    // NEU: Port Zelle
+                    row.insertCell().className = 'port-cell';    
                     row.insertCell().className = 'actions-cell'; 
                     existingRows.set(instanceNameStr, row);
                 }
                 row.cells[1].textContent = data.status_text;
-                row.cells[2].textContent = data.is_running_managed ? `${data.server_port}` : '-'; // Port anzeigen
+                row.cells[2].textContent = data.is_running_managed ? `${data.server_port}` : '-';
 
-                const actionCell = row.cells[3]; // Aktionen jetzt in Zelle 3
-                actionCell.innerHTML = '';
+                const actionCell = row.cells[3]; actionCell.innerHTML = '';
 
                 if (data.is_running_managed) {
                     actionCell.innerHTML += `<button class="action-btn destructive" onclick="handleInstanceAction('stop', '${instanceNameStr}')">Stop</button> `;

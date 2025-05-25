@@ -1,380 +1,204 @@
-from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, session, flash
-import subprocess
+# app.py
+from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, session, flash, Blueprint
 import os
-import shlex
-import signal as signal_module # Umbenannt, um Kollision mit Variable zu vermeiden
 import time
-import logging
 import json
-import shutil
-from mcrcon import MCRcon, MCRconException
-import socket
-from functools import wraps
-import re
+import shutil # Für delete_instance
+import logging
+from auth import auth_bp, login_required, User
 
-# Logging-Konfiguration
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(name)s %(threadName)s : %(message)s')
-werkzeug_logger = logging.getLogger('werkzeug')
-werkzeug_logger.setLevel(logging.INFO)
+# Importiere aus unseren Modulen
+from config import SECRET_KEY, DEBUG, LOG_LEVEL, SERVER_VERSIONS_BASE_PATH, INSTANCES_BASE_PATH, DEFAULT_RCON_PORT, DEFAULT_MINECRAFT_PORT
+from auth import login_view, logout_view, login_required # auth_bp für Routen, login_required für Schutz
+import server_manager as sm # sm als Alias für server_manager
+from mcrcon_patch import apply_mcrcon_patch
 
-# --- BEGIN MONKEYPATCH für mcrcon ---
-_original_signal_signal = signal_module.signal
-_original_signal_alarm = signal_module.alarm
-_original_MCRcon_init = MCRcon.__init__
-_original_MCRcon_connect = MCRcon.connect
-_original_MCRcon_command = MCRcon.command
+# Monkeypatch für mcrcon (muss vor der ersten MCRcon-Nutzung passieren)
+# Wenn der Patch in server_manager.py wäre, müsste man sicherstellen,
+# dass server_manager.py importiert wird, bevor MCRcon irgendwo anders genutzt wird.
+# Es ist oft am sichersten, Patches so früh wie möglich in der Hauptanwendungsdatei anzuwenden.
+apply_mcrcon_patch()
 
-def _patched_mcrcon_init(self, host, password, port=25575, timeout=5, tlsmode=0, tls_certfile=None, tls_keyfile=None, tls_ca_certs=None, family=socket.AF_UNSPEC):
-    self.host = host; self.password = password; self.port = port
-    self.timeout = timeout if timeout and timeout > 0 else 5
-    self.tlsmode = tlsmode; self.tls_certfile = tls_certfile; self.tls_keyfile = tls_keyfile
-    self.tls_ca_certs = tls_ca_certs; self.family = family; self.socket = None
-    # logging.getLogger('app').debug(f"Patched MCRcon.__init__ for {self.host}:{self.port}. Signal handler registration skipped.")
 
-def _patched_mcrcon_connect(self):
-    if self.socket: return
-    # logging.getLogger('app').debug(f"Patched MCRcon.connect: Calling original connect for {self.host}:{self.port}")
-    current_alarm = signal_module.alarm; signal_module.alarm = lambda t: logging.getLogger('app').debug(f"Patched MCRcon.connect: Skipped signal_module.alarm({t})")
-    try:
-        _original_MCRcon_connect(self)
-        if self.socket:
-            socket_timeout = self.timeout
-            if socket_timeout is None or socket_timeout <= 0: socket_timeout = 5
-            self.socket.settimeout(socket_timeout)
-    except Exception as e: raise
-    finally: signal_module.alarm = current_alarm
-
-def _patched_mcrcon_command(self, command_str):
-    if not self.socket: _patched_mcrcon_connect(self)
-    current_alarm = signal_module.alarm
-    signal_module.alarm = lambda t: logging.getLogger('app').debug(f"Patched MCRcon.command: Skipped signal_module.alarm({t}) for command '{command_str}'")
-    try:
-        response = _original_MCRcon_command(self, command_str)
-        return response
-    except socket.timeout: raise MCRconException("RCON command timed out (socket timeout)")
-    except Exception as e: raise
-    finally: signal_module.alarm = current_alarm
-
-MCRcon.__init__ = _patched_mcrcon_init
-MCRcon.connect = _patched_mcrcon_connect
-MCRcon.command = _patched_mcrcon_command
-# --- END MONKEYPATCH ---
-
+# Flask App Initialisierung
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = SECRET_KEY
+app.debug = DEBUG
 
-# --- Konfiguration ---
-PANEL_USERNAME = "root"
-PANEL_PASSWORD = "Potato"
-SERVER_VERSIONS_BASE_PATH = os.environ.get("MC_SERVER_VERSIONS_PATH", "/opt/minecraft_versions")
-INSTANCES_BASE_PATH = os.environ.get("MC_INSTANCES_PATH", "/srv/minecraft_servers")
-os.makedirs(SERVER_VERSIONS_BASE_PATH, exist_ok=True)
-os.makedirs(INSTANCES_BASE_PATH, exist_ok=True)
-running_servers = {}
-DEFAULT_MIN_RAM = "1G"; DEFAULT_MAX_RAM = "2G"
-DEFAULT_JAVA_ARGS = ("-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 "
-    "-XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch "
-    "-XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M "
-    "-XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 "
-    "-XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 "
-    "-XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem "
-    "-XX:MaxTenuringThreshold=1 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true")
-DEFAULT_SERVER_ARGS = "nogui"; DEFAULT_RCON_PORT = 25575
-DEFAULT_MINECRAFT_PORT = 25565
+# Logging Konfiguration für die App
+logging.basicConfig(level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
+                    format='%(asctime)s %(levelname)s: %(name)s: %(message)s')
+if not app.debug: # Werkzeug-Logger in Produktion weniger gesprächig machen
+    werkzeug_logger = logging.getLogger('werkzeug')
+    werkzeug_logger.setLevel(logging.WARNING)
 
-# --- Decorator für Login-Prüfung ---
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'logged_in_user' not in session:
-            flash('Bitte zuerst einloggen.', 'warning')
-            return redirect(url_for('login_route', next=request.url))
-        return f(*args, **kwargs)
-    return decorated_function
+# Authentifizierungs-Blueprint erstellen und Routen hinzufügen
+auth_bp = Blueprint('auth_bp', __name__, template_folder='templates')
+auth_bp.add_url_rule('/login', view_func=login_view, methods=['GET', 'POST'], endpoint='login_route')
+auth_bp.add_url_rule('/logout', view_func=logout_view, endpoint='logout_route')
+app.register_blueprint(auth_bp) # Kein url_prefix, wenn /login und /logout direkt sein sollen
 
-# --- Hilfsfunktionen Konfig ---
-def get_instance_config_path(instance_name):
-    instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name)
-    return os.path.join(instance_dir, "panel_config.json")
+# Haupt-Blueprint für die Panel-Funktionen (optional, aber gut für Struktur)
+main_bp = Blueprint('main_bp', __name__, template_folder='templates')
 
-def load_instance_config(instance_name):
-    config_path = get_instance_config_path(instance_name)
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f: return json.load(f)
-        except json.JSONDecodeError as e: app.logger.error(f"JSONDecodeError '{instance_name}': {e}")
-        except Exception as e: app.logger.error(f"Fehler Laden Konfig '{instance_name}': {e}")
-    return None
-
-def save_instance_config(instance_name, config_data):
-    instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name)
-    os.makedirs(instance_dir, exist_ok=True)
-    config_path = get_instance_config_path(instance_name)
-    try:
-        with open(config_path, 'w', encoding='utf-8') as f: json.dump(config_data, f, indent=4)
-        app.logger.info(f"Konfig für '{instance_name}' gespeichert: {config_path}")
-    except Exception as e: app.logger.error(f"Fehler Speichern Konfig '{instance_name}': {e}")
-
-# --- Hilfsfunktionen Server ---
-def get_available_server_jars():
-    if not os.path.exists(SERVER_VERSIONS_BASE_PATH): app.logger.warning(f"JAR-Verzeichnis nicht da: {SERVER_VERSIONS_BASE_PATH}"); return []
-    try:
-        return sorted([f for f in os.listdir(SERVER_VERSIONS_BASE_PATH) if os.path.isfile(os.path.join(SERVER_VERSIONS_BASE_PATH, f)) and f.endswith('.jar')])
-    except Exception as e: app.logger.error(f"Fehler Lesen JARs '{SERVER_VERSIONS_BASE_PATH}': {e}"); return []
-
-def get_log_file_path_for_instance(instance_name):
-    instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name)
-    return os.path.join(instance_dir, "logs", "latest.log")
-
-def parse_server_port_from_args(server_args_str):
-    if not server_args_str: return DEFAULT_MINECRAFT_PORT
-    match = re.search(r'(?:--port|-p)\s+(\d+)', server_args_str)
-    if match:
-        try: return int(match.group(1))
-        except ValueError: pass
-    return DEFAULT_MINECRAFT_PORT
-
-def _start_server_process(instance_name, config):
-    instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name); os.makedirs(instance_dir, exist_ok=True)
-    server_jar_name = config.get('server_jar')
-    if not server_jar_name: return None, "Fehler: Server-JAR nicht spezifiziert."
-    server_jar_path = os.path.join(SERVER_VERSIONS_BASE_PATH, server_jar_name)
-    if not os.path.isfile(server_jar_path): return None, f"Fehler: Server-JAR '{server_jar_path}' nicht gefunden."
-    
-    eula_path = os.path.join(instance_dir, "eula.txt")
-    try:
-        if not os.path.exists(eula_path) or "eula=true" not in open(eula_path, encoding='utf-8').read():
-            with open(eula_path, "w", encoding='utf-8') as f: f.write("eula=true\n")
-    except Exception as e: app.logger.error(f"Fehler EULA '{instance_name}': {e}")
-
-    server_props_path = os.path.join(instance_dir, "server.properties"); rcon_enabled_by_panel = False
-    current_server_port_from_props = DEFAULT_MINECRAFT_PORT # Fallback
-    
-    # Lese zuerst bestehende server.properties, falls vorhanden
-    props_content = {}
-    if os.path.exists(server_props_path):
-        try:
-            with open(server_props_path, 'r', encoding='utf-8') as f_props:
-                for line in f_props:
-                    line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1); props_content[key.strip()] = value.strip()
-            if 'server-port' in props_content:
-                current_server_port_from_props = int(props_content['server-port'])
-        except Exception as e:
-            app.logger.warning(f"Konnte server.properties für '{instance_name}' nicht vollständig lesen: {e}")
-
-
-    # RCON Einstellungen anwenden/überschreiben
-    if config.get('rcon_password') and config.get('rcon_port'):
-        props_content['enable-rcon']='true'
-        props_content['rcon.port']=str(config['rcon_port'])
-        props_content['rcon.password']=config['rcon_password']
-        rcon_enabled_by_panel = True
-    
-    # Server-Port bestimmen und in server.properties setzen/überschreiben
-    # Priorität: 1. server_args, 2. server.properties (gelesener Wert), 3. Default
-    server_port_from_args = parse_server_port_from_args(config.get('server_args', DEFAULT_SERVER_ARGS))
-    final_server_port = server_port_from_args if server_port_from_args != DEFAULT_MINECRAFT_PORT else current_server_port_from_props
-    props_content['server-port'] = str(final_server_port)
-
-    try: # Schreibe die aktualisierten Properties
-        with open(server_props_path, 'w', encoding='utf-8') as f_props:
-            for key, value in props_content.items(): f_props.write(f"{key}={value}\n")
-        app.logger.info(f"RCON/Server-Port in server.properties für '{instance_name}' aktualisiert.")
-    except Exception as e: app.logger.error(f"Fehler Schreiben server.properties '{instance_name}': {e}")
-
-    cmd_parts = ["java", f"-Xms{config.get('min_ram', DEFAULT_MIN_RAM)}", f"-Xmx{config.get('max_ram', DEFAULT_MAX_RAM)}"]
-    java_args_to_use = config.get('java_args', DEFAULT_JAVA_ARGS)
-    if java_args_to_use and java_args_to_use.strip(): cmd_parts.extend(shlex.split(java_args_to_use))
-    if config.get('velocity_secret'): cmd_parts.append(f"-Dvelocity-forwarding-secret={config['velocity_secret']}")
-    cmd_parts.extend(["-jar", server_jar_path])
-    server_args_to_use = config.get('server_args', DEFAULT_SERVER_ARGS)
-    if server_args_to_use and server_args_to_use.strip(): cmd_parts.extend(shlex.split(server_args_to_use))
-    
-    log_dir = os.path.join(instance_dir, "logs"); os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, "latest.log")
-    try:
-        with open(log_file_path, 'w', encoding='utf-8') as lf: lf.write(f"--- Log {instance_name} @ {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-    except Exception as e: app.logger.error(f"Konnte Log '{log_file_path}' nicht initialisieren: {e}")
-    
-    message_suffix = f"Server loggt nach 'logs/latest.log'. Port: {final_server_port}."
-    if rcon_enabled_by_panel: message_suffix += f" RCON auf Port {config.get('rcon_port')}."
-    
-    log_handle_for_direct_start = None
-    server_metadata = {
-        'instance_dir': instance_dir, 'log_file_path': log_file_path, 'log_handle': None,
-        'config_snapshot': config.copy(),
-        'server_port': final_server_port,
-        'rcon_port': config.get('rcon_port') if config.get('rcon_password') else None,
-        'rcon_password': config.get('rcon_password') if config.get('rcon_port') else None
-    }
-    if config.get('use_screen', True):
-        screen_name = config.get('screen_name', '').strip() or f"mc_{instance_name.replace('.', '_').replace('-', '_')}"
-        if subprocess.call("command -v screen > /dev/null", shell=True, executable='/bin/bash') != 0: return None, "'screen' nicht gefunden."
-        screen_cmd = ["screen", "-L", "-Logfile", log_file_path, "-S", screen_name, "-dmS"]; screen_cmd.extend(cmd_parts)
-        subprocess.Popen(screen_cmd, cwd=instance_dir)
-        server_metadata.update({'pid': None, 'screen_name': screen_name, 'type': 'screen'})
-        running_servers[instance_name] = server_metadata
-        return "screen", f"'{instance_name}' startet in Screen '{screen_name}'. {message_suffix}"
-    else:
-        try:
-            log_handle_for_direct_start = open(log_file_path, 'ab')
-            process = subprocess.Popen(cmd_parts, cwd=instance_dir, stdout=log_handle_for_direct_start, stderr=subprocess.STDOUT, preexec_fn=os.setsid)
-            server_metadata.update({'pid': process.pid, 'screen_name': None, 'type': 'direct', 'log_handle': log_handle_for_direct_start})
-            running_servers[instance_name] = server_metadata
-            return "direct", f"'{instance_name}' startet direkt (PID: {process.pid}). {message_suffix}"
-        except Exception as e:
-            if log_handle_for_direct_start: log_handle_for_direct_start.close()
-            app.logger.error(f"Fehler direkter Start '{instance_name}': {e}"); return None, f"Fehler direkter Start: {e}"
-
-# --- Login Routen ---
-@app.route('/login', methods=['GET', 'POST'])
-def login_route():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        if username == PANEL_USERNAME and password == PANEL_PASSWORD:
-            session['logged_in_user'] = username
-            flash('Erfolgreich eingeloggt!', 'success')
-            next_url = request.args.get('next')
-            return redirect(next_url or url_for('index'))
-        else:
-            flash('Falscher Benutzername oder Passwort.', 'error')
-    return render_template('login.html')
-
-@app.route('/logout')
-def logout_route():
-    session.pop('logged_in_user', None)
-    flash('Erfolgreich ausgeloggt.', 'info')
-    return redirect(url_for('login_route'))
-
-# --- Geschützte Hauptroute ---
-@app.route('/')
+@main_bp.route('/')
 @login_required
 def index():
-    server_jars = get_available_server_jars()
+    server_jars = sm.get_available_server_jars()
+    # Lese Instanz-Ordner direkt für die Anzeige
     instance_folders = [d for d in os.listdir(INSTANCES_BASE_PATH) if os.path.isdir(os.path.join(INSTANCES_BASE_PATH, d))] if os.path.exists(INSTANCES_BASE_PATH) else []
+    
     return render_template('index.html',
                            server_jars=server_jars,
-                           initial_instances=instance_folders,
+                           initial_instances=instance_folders, # Für die initiale Tabellenstruktur
                            default_instance_path=INSTANCES_BASE_PATH,
                            default_rcon_port=DEFAULT_RCON_PORT,
                            logged_in_user=session.get('logged_in_user'))
 
-# --- Geschützte API-Routen ---
-@app.route('/start_server', methods=['POST'])
+@main_bp.route('/start_server', methods=['POST'])
 @login_required
-def start_server_from_form():
+def start_server_route():
     data = request.form
     try:
-        instance_name = data.get('instance_name', '').strip(); rcon_port_str = data.get('rcon_port', '').strip()
-        current_config = {'server_jar': data.get('server_jar'), 'min_ram': data.get('min_ram', DEFAULT_MIN_RAM), 'max_ram': data.get('max_ram', DEFAULT_MAX_RAM),
-            'velocity_secret': data.get('velocity_secret', ''), 'java_args': data.get('java_args', '').strip(),
-            'server_args': data.get('server_args', DEFAULT_SERVER_ARGS).strip(), 'use_screen': 'use_screen' in data,
-            'screen_name': data.get('screen_name', '').strip(), 'rcon_port': int(rcon_port_str) if rcon_port_str.isdigit() else None,
-            'rcon_password': data.get('rcon_password', '').strip()}
-        if not current_config['java_args']: current_config['java_args'] = DEFAULT_JAVA_ARGS
-        if not current_config['server_args']: current_config['server_args'] = DEFAULT_SERVER_ARGS
-        if not instance_name or not current_config['server_jar']: return jsonify({'status': 'error', 'message': 'Instanzname und JAR sind Pflicht.'}), 400
+        instance_name = data.get('instance_name', '').strip()
+        rcon_port_str = data.get('rcon_port', '').strip()
+        current_config = {
+            'server_jar': data.get('server_jar'),
+            'min_ram': data.get('min_ram', sm.DEFAULT_MIN_RAM),
+            'max_ram': data.get('max_ram', sm.DEFAULT_MAX_RAM),
+            'velocity_secret': data.get('velocity_secret', ''),
+            'java_args': data.get('java_args', '').strip(),
+            'server_args': data.get('server_args', sm.DEFAULT_SERVER_ARGS).strip(),
+            'use_screen': 'use_screen' in data,
+            'screen_name': data.get('screen_name', '').strip(),
+            'rcon_port': int(rcon_port_str) if rcon_port_str.isdigit() else None,
+            'rcon_password': data.get('rcon_password', '').strip()
+        }
+        if not current_config['java_args']: current_config['java_args'] = sm.DEFAULT_JAVA_ARGS
+        if not current_config['server_args']: current_config['server_args'] = sm.DEFAULT_SERVER_ARGS
+        if not instance_name or not current_config['server_jar']:
+            return jsonify({'status': 'error', 'message': 'Instanzname und Server-JAR sind erforderlich.'}), 400
         if (current_config['rcon_password'] and not current_config['rcon_port']) or \
            (not current_config['rcon_password'] and current_config['rcon_port']):
-            return jsonify({'status': 'error', 'message': 'Für RCON Port und Passwort angeben (oder beides leer).'}),400
-        if instance_name in running_servers: return jsonify({'status': 'warning', 'message': f"'{instance_name}' scheint verwaltet zu werden."}), 400
-        save_instance_config(instance_name, current_config)
-        start_type, message = _start_server_process(instance_name, current_config)
-        if start_type: app.logger.info(message); return jsonify({'status': 'success', 'message': message})
-        else: return jsonify({'status': 'error', 'message': message}), 500
-    except Exception as e: app.logger.error(f"Fehler /start_server '{data.get('instance_name', 'N/A')}': {e}", exc_info=True); return jsonify({'status': 'error', 'message': f"Unerwarteter Fehler: {str(e)}"}), 500
+            return jsonify({'status': 'error', 'message': 'Für RCON müssen Port und Passwort angegeben werden (oder beides leer lassen).'}),400
+        if instance_name in sm.running_servers: # Zugriff auf running_servers in server_manager
+             return jsonify({'status': 'warning', 'message': f"Instanz '{instance_name}' scheint bereits verwaltet zu werden."}), 400
 
-@app.route('/quick_start_server', methods=['POST'])
+        sm.save_instance_config(instance_name, current_config)
+        start_type, message = sm.start_instance(instance_name, current_config)
+
+        if start_type:
+            app.logger.info(message)
+            return jsonify({'status': 'success', 'message': message})
+        else:
+            return jsonify({'status': 'error', 'message': message}), 500
+    except Exception as e:
+        app.logger.error(f"Unerwarteter Fehler in /start_server für '{data.get('instance_name', 'N/A')}': {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': f"Ein unerwarteter Fehler ist aufgetreten: {str(e)}"}), 500
+
+@main_bp.route('/quick_start_server', methods=['POST'])
 @login_required
-def quick_start_server():
+def quick_start_server_route():
     data = request.form; instance_name = data.get('instance_name')
     if not instance_name: return jsonify({'status': 'error', 'message': 'Instanzname fehlt.'}), 400
-    if instance_name in running_servers: return jsonify({'status': 'warning', 'message': f"'{instance_name}' läuft bereits."}), 400
-    config = load_instance_config(instance_name)
+    if instance_name in sm.running_servers: return jsonify({'status': 'warning', 'message': f"'{instance_name}' läuft bereits."}), 400
+    
+    config = sm.load_instance_config(instance_name)
     if not config: return jsonify({'status': 'error', 'message': f"Keine Konfig für '{instance_name}'."}), 404
-    config.setdefault('min_ram', DEFAULT_MIN_RAM); config.setdefault('max_ram', DEFAULT_MAX_RAM); config.setdefault('java_args', DEFAULT_JAVA_ARGS)
-    if not config['java_args'].strip(): config['java_args'] = DEFAULT_JAVA_ARGS
-    config.setdefault('server_args', DEFAULT_SERVER_ARGS)
-    if not config['server_args'].strip(): config['server_args'] = DEFAULT_SERVER_ARGS
+    
+    # Defaults anwenden, falls in gespeicherter Config nicht vorhanden
+    config.setdefault('min_ram', sm.DEFAULT_MIN_RAM); config.setdefault('max_ram', sm.DEFAULT_MAX_RAM)
+    config.setdefault('java_args', sm.DEFAULT_JAVA_ARGS)
+    if not config['java_args'].strip(): config['java_args'] = sm.DEFAULT_JAVA_ARGS
+    config.setdefault('server_args', sm.DEFAULT_SERVER_ARGS)
+    if not config['server_args'].strip(): config['server_args'] = sm.DEFAULT_SERVER_ARGS
     config.setdefault('use_screen', True)
-    if config['use_screen'] and not config.get('screen_name', '').strip(): config['screen_name'] = f"mc_{instance_name.replace('.', '_').replace('-', '_')}"
-    start_type, message = _start_server_process(instance_name, config)
+    if config['use_screen'] and not config.get('screen_name', '').strip():
+        config['screen_name'] = f"mc_{instance_name.replace('.', '_').replace('-', '_')}"
+    
+    start_type, message = sm.start_instance(instance_name, config)
     if start_type: app.logger.info(f"Schnellstart '{instance_name}': {message}"); return jsonify({'status': 'success', 'message': message})
     else: return jsonify({'status': 'error', 'message': message}), 500
 
-@app.route('/stop_server', methods=['POST'])
+@main_bp.route('/stop_server', methods=['POST'])
 @login_required
-def stop_server_route():
-    data = request.form; instance_name = data.get('instance_name')
-    if not instance_name or instance_name not in running_servers: return jsonify({'status': 'error', 'message': f"'{instance_name}' nicht gefunden/verwaltet."}), 404
-    server_info = running_servers[instance_name]; message = ""
-    try:
-        if server_info['type'] == 'screen' and server_info.get('screen_name'):
-            subprocess.run(["screen", "-S", server_info['screen_name'], "-X", "stuff", "stop\r"], check=True, timeout=5)
-            message = f"Stop-Befehl an Screen '{server_info['screen_name']}'."
-        elif server_info['type'] == 'direct' and server_info.get('pid'):
-            os.killpg(server_info['pid'], signal_module.SIGINT)
-            message = f"Interrupt an Prozessgruppe von PID {server_info['pid']}."
-        else: return jsonify({'status': 'error', 'message': 'Unbekannter Typ/Fehlende Infos.'}), 500
-        app.logger.info(f"Stopp '{instance_name}': {message}"); return jsonify({'status': 'success', 'message': message})
-    except subprocess.TimeoutExpired: message = f"Timeout Stop Screen '{server_info.get('screen_name')}'"; app.logger.warning(message); return jsonify({'status': 'warning', 'message': message}), 500
-    except (subprocess.CalledProcessError, ProcessLookupError, PermissionError) as e:
-        message = f"Fehler Stop '{instance_name}': {str(e)}. Evtl. schon gestoppt."; app.logger.warning(message)
-        if instance_name in running_servers:
-            if running_servers[instance_name].get('log_handle'):
-                try: running_servers[instance_name]['log_handle'].close()
-                except Exception: pass
-            del running_servers[instance_name]
-        return jsonify({'status': 'warning', 'message': message}), 500
-    except Exception as e: app.logger.error(f"Allg. Fehler Stop '{instance_name}': {e}", exc_info=True); return jsonify({'status': 'error', 'message': f"Allg. Fehler: {str(e)}"}), 500
+def stop_server_route_internal(): # Umbenannt, da stop_server_route in server_manager existiert
+    data = request.form
+    instance_name = data.get('instance_name')
+    success, message = sm.stop_instance_managed(instance_name)
+    status_code = 200 if success else 500
+    if "bereits gestoppt" in message.lower() or "nicht gefunden" in message.lower() or "timeout" in message.lower():
+        status_code = 200 # Oder 404/408, aber für Frontend ist Warning ok
+        return jsonify({'status': 'warning', 'message': message}), status_code
+    return jsonify({'status': 'success' if success else 'error', 'message': message}), status_code
 
-@app.route('/restart_server', methods=['POST'])
+
+@main_bp.route('/restart_server', methods=['POST'])
 @login_required
-def restart_server_route():
+def restart_server_route_internal():
     data = request.form; instance_name = data.get('instance_name')
     if not instance_name: return jsonify({'status': 'error', 'message': 'Instanzname fehlt.'}), 400
-    config_to_restart_with = None; was_running_managed = instance_name in running_servers
+
+    config_to_restart_with = None
+    was_running_managed = instance_name in sm.running_servers
+
     if was_running_managed:
-        server_info_before_stop = running_servers[instance_name].copy(); config_to_restart_with = server_info_before_stop.get('config_snapshot')
-        app.logger.info(f"Stopp für Neustart '{instance_name}'.");
-        class MockForm: get = lambda self, key, default=None: instance_name if key == 'instance_name' else default
-        original_request_form = request.form; request.form = MockForm()
-        stop_response = stop_server_route(); request.form = original_request_form
-        stop_data = json.loads(stop_response.get_data(as_text=True))
-        if stop_data.get('status') not in ['success', 'warning']: app.logger.error(f"Fehler Stopp für Neustart '{instance_name}': {stop_data.get('message')}"); return jsonify({'status': 'error', 'message': f"Konnte nicht stoppen: {stop_data.get('message')}"})
-        max_wait=20; wait_int=1; waited=0; stopped_ok=False
-        while waited < max_wait:
-            time.sleep(wait_int); waited += wait_int; active_after_stop = False
-            if server_info_before_stop['type'] == 'direct' and server_info_before_stop.get('pid'): active_after_stop = is_pid_running(server_info_before_stop['pid'])
-            elif server_info_before_stop['type'] == 'screen' and server_info_before_stop.get('screen_name'): active_after_stop = is_screen_session_running(server_info_before_stop['screen_name'])
-            if not active_after_stop: stopped_ok=True; app.logger.info(f"'{instance_name}' nach {waited}s für Neustart gestoppt."); break
-            else: app.logger.debug(f"Warte auf Stopp '{instance_name}', {waited}s...")
-        if not stopped_ok: app.logger.warning(f"'{instance_name}' nicht in {max_wait}s gestoppt."); return jsonify({'status': 'warning', 'message': f"'{instance_name}' nicht rechtzeitig gestoppt."})
-        if instance_name in running_servers:
-            if running_servers[instance_name].get('log_handle'):
-                try: running_servers[instance_name]['log_handle'].close()
+        server_info_before_stop = sm.running_servers[instance_name].copy()
+        config_to_restart_with = server_info_before_stop.get('config_snapshot')
+        app.logger.info(f"Stopp für Neustart '{instance_name}'.")
+        
+        stopped_successfully, stop_message = sm.stop_instance_managed(instance_name)
+        if not stopped_successfully and "bereits gestoppt" not in stop_message.lower(): # Wenn Stopp fehlschlägt (und nicht weil schon aus)
+            app.logger.error(f"Fehler Stopp für Neustart '{instance_name}': {stop_message}")
+            return jsonify({'status': 'error', 'message': f"Konnte Server nicht stoppen: {stop_message}"})
+
+        max_wait=20; wait_int=1; waited=0; is_stopped_for_restart=False
+        while waited < max_wait: # Warte und prüfe ob Prozess/Screen wirklich weg ist
+            time.sleep(wait_int); waited += wait_int
+            is_active_after_stop = False
+            if server_info_before_stop['type'] == 'direct' and server_info_before_stop.get('pid'):
+                is_active_after_stop = sm.is_pid_running(server_info_before_stop['pid'])
+            elif server_info_before_stop['type'] == 'screen' and server_info_before_stop.get('screen_name'):
+                is_active_after_stop = sm.is_screen_session_running(server_info_before_stop['screen_name'])
+            if not is_active_after_stop:
+                is_stopped_for_restart=True; app.logger.info(f"'{instance_name}' nach {waited}s für Neustart bestätigt gestoppt."); break
+            else: app.logger.debug(f"Warte auf Stopp-Bestätigung '{instance_name}', {waited}s...")
+        
+        if not is_stopped_for_restart:
+            app.logger.warning(f"'{instance_name}' nicht in {max_wait}s gestoppt.");
+            return jsonify({'status': 'warning', 'message': f"'{instance_name}' konnte nicht rechtzeitig gestoppt werden."})
+        
+        # Sicherstellen, dass es aus running_servers entfernt wird
+        if instance_name in sm.running_servers:
+            if sm.running_servers[instance_name].get('log_handle'):
+                try: sm.running_servers[instance_name]['log_handle'].close()
                 except Exception: pass
-            del running_servers[instance_name]
-    else: app.logger.info(f"'{instance_name}' nicht verwaltet. Überspringe Stopp für Neustart.")
-    if not config_to_restart_with: config_to_restart_with = load_instance_config(instance_name)
-    if not config_to_restart_with: app.logger.warning(f"Keine Konfig Neustart '{instance_name}'."); return jsonify({'status': 'error', 'message': f"Keine Konfig für '{instance_name}'."}), 404
-    config_to_restart_with.setdefault('min_ram',DEFAULT_MIN_RAM); config_to_restart_with.setdefault('max_ram',DEFAULT_MAX_RAM); config_to_restart_with.setdefault('java_args',DEFAULT_JAVA_ARGS)
-    if not config_to_restart_with['java_args'].strip(): config_to_restart_with['java_args'] = DEFAULT_JAVA_ARGS
-    config_to_restart_with.setdefault('server_args',DEFAULT_SERVER_ARGS)
-    if not config_to_restart_with['server_args'].strip(): config_to_restart_with['server_args'] = DEFAULT_SERVER_ARGS
+            del sm.running_servers[instance_name]
+    else:
+        app.logger.info(f"'{instance_name}' nicht verwaltet. Überspringe Stopp für Neustart.")
+
+    if not config_to_restart_with: config_to_restart_with = sm.load_instance_config(instance_name)
+    if not config_to_restart_with:
+        return jsonify({'status': 'error', 'message': f"Keine Konfig für Neustart von '{instance_name}'."}), 404
+    
+    # Defaults anwenden
+    config_to_restart_with.setdefault('min_ram',sm.DEFAULT_MIN_RAM); config_to_restart_with.setdefault('max_ram',sm.DEFAULT_MAX_RAM) # ... etc.
+    if not config_to_restart_with.get('java_args','').strip(): config_to_restart_with['java_args'] = sm.DEFAULT_JAVA_ARGS
+    if not config_to_restart_with.get('server_args','').strip(): config_to_restart_with['server_args'] = sm.DEFAULT_SERVER_ARGS
     config_to_restart_with.setdefault('use_screen', True)
-    if config_to_restart_with['use_screen'] and not config_to_restart_with.get('screen_name','').strip(): config_to_restart_with['screen_name'] = f"mc_{instance_name.replace('.','_').replace('-','_')}"
-    app.logger.info(f"Starte für Neustart '{instance_name}'."); start_type, message = _start_server_process(instance_name, config_to_restart_with)
-    if start_type: app.logger.info(f"Neustart '{instance_name}': {message}"); return jsonify({'status': 'success', 'message': f"Neustart: {message}"})
+    if config_to_restart_with['use_screen'] and not config_to_restart_with.get('screen_name','').strip():
+        config_to_restart_with['screen_name'] = f"mc_{instance_name.replace('.','_').replace('-','_')}"
+
+    app.logger.info(f"Starte für Neustart '{instance_name}'.")
+    start_type, message = sm.start_instance(instance_name, config_to_restart_with)
+    if start_type: return jsonify({'status': 'success', 'message': f"Neustart: {message}"})
     else: return jsonify({'status': 'error', 'message': f"Fehler Neustart (Start): {message}"}), 500
 
-@app.route('/get_logs/<instance_name>')
+
+@main_bp.route('/get_logs/<instance_name>')
 @login_required
-def get_logs(instance_name):
-    log_file_path = get_log_file_path_for_instance(instance_name)
+def get_logs_route(instance_name):
+    log_file_path = sm.get_log_file_path(instance_name)
     if not os.path.exists(log_file_path): return jsonify({"logs": f"Logdatei nicht da: {log_file_path}", "error": True}), 404
     try:
         num_lines = int(request.args.get('lines', 200)); lines = []
@@ -382,173 +206,133 @@ def get_logs(instance_name):
         return jsonify({"logs": "".join(lines)})
     except Exception as e: app.logger.error(f"Fehler Lesen Log {log_file_path}: {e}", exc_info=True); return jsonify({"logs": f"Fehler Lesen: {str(e)}", "error": True}), 500
 
-@app.route('/stream_logs/<instance_name>')
+@main_bp.route('/stream_logs/<instance_name>')
 @login_required
-def stream_logs(instance_name):
-    log_file_path = get_log_file_path_for_instance(instance_name)
+def stream_logs_route(instance_name):
+    log_file_path = sm.get_log_file_path(instance_name)
     def gen_logs():
+        # (Logik aus server_manager.py hierher verschieben oder dort lassen und aufrufen)
+        # Der Einfachheit halber hier dupliziert, besser wäre Auslagerung
         app.logger.info(f"Log-Stream '{instance_name}' ({log_file_path}).")
-        if not os.path.exists(log_file_path):
-            app.logger.warning(f"Log {log_file_path} nicht da."); yield f"data: [WARN] Log {os.path.basename(log_file_path)} erwartet...\n\n"
-            for _ in range(5):
-                if os.path.exists(log_file_path): break
-                time.sleep(1)
-            if not os.path.exists(log_file_path): yield f"data: [FEHLER] Log nicht gefunden.\n\n"; app.logger.error(f"Log {log_file_path} nach Warten nicht da."); return
+        if not os.path.exists(log_file_path): #... (Rest der gen_logs Logik)
+            yield f"data: [WARN] Logdatei {os.path.basename(log_file_path)} nicht gefunden...\n\n"
+            return
         inode=None; pos=0; init_sent=False
         while True:
             try:
-                if not os.path.exists(log_file_path): app.logger.warning(f"Log {log_file_path} weg."); yield "data: [WARN] Log temporär nicht da.\n\n"; inode=None;pos=0;init_sent=False; time.sleep(2); continue
+                if not os.path.exists(log_file_path): yield "data: [WARN] Log-Datei temporär nicht da.\n\n"; inode=None;pos=0;init_sent=False; time.sleep(2); continue
                 cur_inode=os.stat(log_file_path).st_ino; cur_size=os.path.getsize(log_file_path)
-                if inode is not None and (cur_inode != inode or cur_size < pos): app.logger.info(f"Log-Rotation {log_file_path}."); yield f"data: [INFO] Log-Rotation...\n\n"; pos=0; init_sent=False
+                if inode is not None and (cur_inode != inode or cur_size < pos): yield f"data: [INFO] Log-Rotation...\n\n"; pos=0; init_sent=False
                 inode=cur_inode
                 with open(log_file_path,'r',encoding='utf-8',errors='replace') as f:
                     if not init_sent: f.seek(max(0, cur_size-4096)); content=f.read(); pos=f.tell(); init_sent=True
                     else: f.seek(pos); content=f.read(); pos=f.tell()
                     if content:
                         for line in content.splitlines(keepends=False):
-                            escaped_line = line.replace('\n', '\\n')
+                            escaped_line = line.replace('\n', '\\n') # Newlines im Log-Inhalt escapen
                             yield f"data: {escaped_line}\n\n"
-            except FileNotFoundError: app.logger.warning(f"Log {log_file_path} (inner) nicht da."); yield "data: [WARN] Log (inner) nicht da.\n\n"; inode=None;pos=0;init_sent=False; time.sleep(2)
-            except Exception as e: app.logger.error(f"Fehler Log-Stream '{instance_name}': {e}", exc_info=True); yield f"data: [FEHLER] Interner Log-Stream Fehler: {str(e)}\n\n"; time.sleep(5)
-            time.sleep(0.2)
+            except FileNotFoundError: # Sollte durch obigen Check abgedeckt sein, aber sicher ist sicher
+                app.logger.warning(f"Log-Datei {log_file_path} während des Streamens (innerhalb try) nicht gefunden. Warte...")
+                yield "data: [WARNUNG] Log-Datei temporär nicht gefunden (innerer Check). Warte...\n\n"
+                last_known_inode = None; last_pos = 0; initial_chunk_sent = False
+                time.sleep(2)
+            except Exception as e:
+                app.logger.error(f"Fehler im Log-Stream für {instance_name} ({log_file_path}): {e}", exc_info=True)
+                yield f"data: [FEHLER] Interner Fehler im Log-Stream: {str(e)}\n\n"
+                time.sleep(5) # Pause vor erneutem Versuch bei allgemeinen Fehlern
+            time.sleep(0.2) # Kurze Pause zwischen den Leseversuchen
+            
     return Response(gen_logs(), mimetype='text/event-stream')
 
-@app.route('/send_rcon_command/<instance_name>', methods=['POST'])
+
+@main_bp.route('/send_rcon_command/<instance_name>', methods=['POST'])
 @login_required
-def send_rcon_command(instance_name):
-    config = None
-    if instance_name in running_servers: config = running_servers[instance_name].get('config_snapshot', {})
-    else: config = load_instance_config(instance_name)
-    if not config: return jsonify({'status': 'error', 'message': f"Keine Konfig für Instanz '{instance_name}'."}), 404
-    rcon_host = "127.0.0.1"; rcon_port = config.get('rcon_port'); rcon_password = config.get('rcon_password')
+def send_rcon_command_route(instance_name):
     command_to_send = request.form.get('command')
-    if not command_to_send: return jsonify({'status': 'error', 'message': 'Kein Befehl.'}), 400
-    if not rcon_port or not rcon_password: return jsonify({'status': 'error', 'message': 'RCON nicht (vollständig) konfiguriert.'}), 400
-    try:
-        app.logger.debug(f"RCON Verbindung zu {rcon_host}:{rcon_port} für {instance_name}")
-        with MCRcon(host=rcon_host, password=rcon_password, port=int(rcon_port), timeout=5) as mcr:
-            app.logger.debug(f"RCON verbunden. Sende: {command_to_send}")
-            response = mcr.command(command_to_send) 
-            app.logger.info(f"RCON '{command_to_send}' an '{instance_name}'. Antwort: {str(response)[:100]}...")
-            return jsonify({'status': 'success', 'command': command_to_send, 'response': str(response)})
-    except MCRconException as e: 
-        app.logger.error(f"MCRconException '{instance_name}' Cmd '{command_to_send}': {e}", exc_info=False)
-        return jsonify({'status': 'error', 'message': f'RCON Fehler: {str(e)}'}), 500
-    except Exception as e:
-        app.logger.error(f"Allg. RCON Fehler '{instance_name}' Cmd '{command_to_send}': {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': f'Allgemeiner RCON Fehler: {str(e)}'}), 500
+    response, error = sm.send_rcon_to_instance(instance_name, command_to_send)
+    if error:
+        app.logger.error(f"RCON Fehler für '{instance_name}', Befehl '{command_to_send}': {error}")
+        return jsonify({'status': 'error', 'message': error}), 500
+    
+    app.logger.info(f"RCON '{command_to_send}' an '{instance_name}'. Antwort: {str(response)[:100]}...")
+    return jsonify({'status': 'success', 'command': command_to_send, 'response': str(response)})
 
-@app.route('/delete_instance/<instance_name>', methods=['POST'])
+@main_bp.route('/delete_instance/<instance_name>', methods=['POST'])
 @login_required
-def delete_instance_route(instance_name):
-    app.logger.info(f"Löschanfrage für Instanz '{instance_name}' erhalten.")
-    if instance_name in running_servers:
-        app.logger.info(f"Instanz '{instance_name}' läuft, versuche zu stoppen vor dem Löschen.")
-        class MockForm: get = lambda self, key, default=None: instance_name if key == 'instance_name' else default
-        original_request_form = request.form; request.form = MockForm()
-        stop_response = stop_server_route(); request.form = original_request_form
+def delete_instance_route_internal(instance_name):
+    app.logger.info(f"Löschanfrage für Instanz '{instance_name}'.")
+    # 1. Server stoppen (falls verwaltet)
+    if instance_name in sm.running_servers:
+        app.logger.info(f"Stoppe '{instance_name}' vor dem Löschen.")
+        stopped, msg = sm.stop_instance_managed(instance_name)
+        if not stopped and "bereits gestoppt" not in msg.lower(): # Wenn Stopp fehlschlägt (und nicht weil schon aus)
+            return jsonify({'status': 'error', 'message': f"Konnte Server nicht stoppen: {msg}"})
+        time.sleep(5) # Wartezeit
+        # Überprüfe erneut, ob der Prozess wirklich weg ist
+        server_info = sm.running_servers.get(instance_name) # Hol es nochmal
+        if server_info:
+            is_still_active = False
+            if server_info['type'] == 'direct' and server_info.get('pid'): is_still_active = sm.is_pid_running(server_info['pid'])
+            elif server_info['type'] == 'screen' and server_info.get('screen_name'): is_still_active = sm.is_screen_session_running(server_info['screen_name'])
+            if is_still_active: return jsonify({'status': 'warning', 'message': f"Server '{instance_name}' konnte nicht gestoppt werden. Manuell stoppen."})
+            if instance_name in sm.running_servers: # Explizit entfernen, da stop_instance_managed es bei Fehler nicht immer tut
+                if sm.running_servers[instance_name].get('log_handle'):
+                    try: sm.running_servers[instance_name]['log_handle'].close()
+                    except Exception: pass
+                del sm.running_servers[instance_name]
+
+    # 2. Verzeichnis löschen
+    instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name)
+    if os.path.exists(instance_dir) and os.path.isdir(instance_dir):
         try:
-            stop_data = json.loads(stop_response.get_data(as_text=True))
-            if stop_data.get('status') not in ['success', 'warning']:
-                app.logger.error(f"Konnte Server '{instance_name}' nicht für Löschung stoppen: {stop_data.get('message')}")
-                return jsonify({'status': 'error', 'message': f"Konnte Server nicht stoppen: {stop_data.get('message')}"})
-            app.logger.info(f"Warte nach Stopp-Befehl für '{instance_name}'..."); time.sleep(5)
-            server_info_before_delete = running_servers.get(instance_name)
-            if server_info_before_delete:
-                is_still_active = False
-                if server_info_before_delete['type'] == 'direct' and server_info_before_delete.get('pid'): is_still_active = is_pid_running(server_info_before_delete['pid'])
-                elif server_info_before_delete['type'] == 'screen' and server_info_before_delete.get('screen_name'): is_still_active = is_screen_session_running(server_info_before_delete['screen_name'])
-                if is_still_active:
-                    app.logger.warning(f"Server '{instance_name}' läuft noch. Löschung abgebrochen.")
-                    return jsonify({'status': 'warning', 'message': f"Server '{instance_name}' konnte nicht gestoppt werden. Manuell stoppen."})
-                else:
-                    if instance_name in running_servers:
-                        if running_servers[instance_name].get('log_handle'):
-                            try: running_servers[instance_name]['log_handle'].close()
-                            except Exception: pass
-                        del running_servers[instance_name]
-        except Exception as e_stop: app.logger.error(f"Fehler Stopp-Logik beim Löschen von '{instance_name}': {e_stop}", exc_info=True)
-    else: app.logger.info(f"Instanz '{instance_name}' nicht in running_servers. Überspringe Stopp.")
-    instance_dir_to_delete = os.path.join(INSTANCES_BASE_PATH, instance_name)
-    if os.path.exists(instance_dir_to_delete) and os.path.isdir(instance_dir_to_delete):
-        try:
-            shutil.rmtree(instance_dir_to_delete)
-            app.logger.info(f"Instanzverzeichnis '{instance_dir_to_delete}' gelöscht.")
-            if instance_name in running_servers: del running_servers[instance_name]
-            return jsonify({'status': 'success', 'message': f"Instanz '{instance_name}' und alle Dateien wurden gelöscht."})
+            shutil.rmtree(instance_dir)
+            app.logger.info(f"Instanzverzeichnis '{instance_dir}' gelöscht.")
+            if instance_name in sm.running_servers: del sm.running_servers[instance_name] # Sicherstellen
+            return jsonify({'status': 'success', 'message': f"Instanz '{instance_name}' gelöscht."})
         except Exception as e:
-            app.logger.error(f"Fehler beim Löschen des Verzeichnisses '{instance_dir_to_delete}': {e}", exc_info=True)
-            return jsonify({'status': 'error', 'message': f"Fehler beim Löschen der Serverdateien: {str(e)}"}), 500
+            return jsonify({'status': 'error', 'message': f"Fehler Löschen Dateien: {str(e)}"}), 500
     else:
-        app.logger.warning(f"Instanzverzeichnis '{instance_dir_to_delete}' nicht gefunden. Markiere als gelöscht.")
-        if instance_name in running_servers: del running_servers[instance_name]
-        return jsonify({'status': 'warning', 'message': f"Instanzverzeichnis für '{instance_name}' nicht gefunden, aber als gelöscht markiert."})
+        if instance_name in sm.running_servers: del sm.running_servers[instance_name]
+        return jsonify({'status': 'warning', 'message': f"Verzeichnis für '{instance_name}' nicht gefunden."})
 
-# --- Hilfsfunktionen Status ---
-def is_pid_running(pid):
-    if pid is None: return False
-    try: os.kill(pid, 0); return True
-    except OSError: return False
 
-def is_screen_session_running(screen_name):
-    if not screen_name: return False
-    try:
-        result = subprocess.run(['screen', '-ls'], capture_output=True, text=True, check=False, timeout=3)
-        if result.returncode == 0 and result.stdout:
-            return f".{screen_name}\t(" in result.stdout or f"\t{screen_name}\t(" in result.stdout
-        return False
-    except: app.logger.debug(f"Fehler Prüfen Screen '{screen_name}'.", exc_info=False); return False
-
-@app.route('/server_status', methods=['GET'])
+@main_bp.route('/server_status', methods=['GET'])
 @login_required
-def server_status_route():
+def server_status_route_internal():
     statuses = {}
     all_instance_folders = [d for d in os.listdir(INSTANCES_BASE_PATH) if os.path.isdir(os.path.join(INSTANCES_BASE_PATH, d))] if os.path.exists(INSTANCES_BASE_PATH) else []
+    
     stale = []
-    for name, info in list(running_servers.items()):
+    for name, info in list(sm.running_servers.items()): # Benutze running_servers aus server_manager
         active = False
-        if info['type'] == 'direct' and info.get('pid'): active = is_pid_running(info['pid'])
-        elif info['type'] == 'screen' and info.get('screen_name'): active = is_screen_session_running(info['screen_name'])
+        if info['type'] == 'direct' and info.get('pid'): active = sm.is_pid_running(info['pid'])
+        elif info['type'] == 'screen' and info.get('screen_name'): active = sm.is_screen_session_running(info['screen_name'])
         if not active: stale.append(name)
     for name in stale:
-        if name in running_servers:
-            app.logger.info(f"'{name}' nicht mehr aktiv, entferne aus running_servers.")
-            if running_servers[name].get('log_handle'):
-                try: running_servers[name]['log_handle'].close()
-                except Exception as e: app.logger.debug(f"Fehler Schließen Log-Handle {name}: {e}")
-            del running_servers[name]
+        if name in sm.running_servers:
+            if sm.running_servers[name].get('log_handle'):
+                try: sm.running_servers[name]['log_handle'].close()
+                except Exception: pass
+            del sm.running_servers[name]
 
     for name in all_instance_folders:
-        status_txt = "Gestoppt"; log_p = get_log_file_path_for_instance(name); log_ex = os.path.exists(log_p)
-        managed_run = False; has_cfg = os.path.exists(get_instance_config_path(name)); rcon_ok = False
-        current_server_port = DEFAULT_MINECRAFT_PORT 
+        status_txt = "Gestoppt"; log_p = sm.get_log_file_path(name); log_ex = os.path.exists(log_p)
+        managed_run = False; has_cfg = os.path.exists(sm.get_instance_config_path(name)); rcon_ok = False
+        current_server_port = DEFAULT_MINECRAFT_PORT
 
-        if name in running_servers:
-            info = running_servers[name]; cfg_snap = info.get('config_snapshot', {})
+        instance_config = sm.load_instance_config(name) if has_cfg else {}
+        
+        if name in sm.running_servers:
+            info = sm.running_servers[name]; cfg_snap = info.get('config_snapshot', {})
             if info['type'] == 'direct': status_txt = f"Läuft (Direkt, PID: {info['pid']})"
             elif info['type'] == 'screen': status_txt = f"Läuft (Screen: {info['screen_name']})"
             managed_run = True
             if cfg_snap.get('rcon_port') and cfg_snap.get('rcon_password'): rcon_ok = True
             current_server_port = info.get('server_port', DEFAULT_MINECRAFT_PORT)
-        elif has_cfg:
-            cfg = load_instance_config(name)
-            if cfg:
-                if cfg.get('rcon_port') and cfg.get('rcon_password'): rcon_ok = True
-                current_server_port = parse_server_port_from_args(cfg.get('server_args', ""))
-                # Hier könnte man noch server.properties lesen, falls Port nicht in Args
-                # Dies ist eine Vereinfachung für den Status-Check.
-                if current_server_port == DEFAULT_MINECRAFT_PORT: # Wenn args keinen spezifischen Port hatten
-                    sp_path = os.path.join(INSTANCES_BASE_PATH, name, "server.properties")
-                    if os.path.exists(sp_path):
-                        try:
-                            with open(sp_path, 'r') as fsp:
-                                for line in fsp:
-                                    if line.strip().startswith("server-port="):
-                                        current_server_port = int(line.split("=")[1].strip())
-                                        break
-                        except: pass
-
-
+        elif has_cfg and instance_config:
+            if instance_config.get('rcon_port') and instance_config.get('rcon_password'): rcon_ok = True
+            current_server_port = sm.parse_server_port(instance_config.get('server_args', ""), os.path.join(INSTANCES_BASE_PATH, name))
+            
         statuses[name] = {
             "status_text": status_txt, "log_exists": log_ex,
             "is_running_managed": managed_run, "has_config": has_cfg,
@@ -556,8 +340,10 @@ def server_status_route():
         }
     return jsonify(statuses)
 
+app.register_blueprint(main_bp) # Standard-URL-Prefix ist '/'
+
+
 if __name__ == '__main__':
-    app.logger.info(f"Starte Minecraft Server Panel...")
-    app.logger.info(f"Server Versionen werden aus '{SERVER_VERSIONS_BASE_PATH}' geladen.")
-    app.logger.info(f"Instanzen werden in '{INSTANCES_BASE_PATH}' verwaltet.")
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
+    # ... (Start-Logmeldungen)
+    app.logger.info(f"Starte Minecraft Server Panel mit Loglevel {LOG_LEVEL}...")
+    app.run(host='0.0.0.0', port=5000) # debug=DEBUG wird von app.debug gesteuert

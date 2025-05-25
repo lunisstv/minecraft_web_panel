@@ -33,7 +33,7 @@
             {% endwith %}
         </div>
 
-        <form method="POST" action="{{ url_for('login_route', next=request.args.get('next')) }}">
+        <form method="POST" action="{{ url_for('auth_bp.login_route', next=request.args.get('next')) }}">
             <div>
                 <input type="text" id="username" name="username" placeholder="Benutzername" required>
             </div>
