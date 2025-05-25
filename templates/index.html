@@ -7,14 +7,13 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script>
         // Initialen Dark Mode basierend auf localStorage oder OS-Präferenz setzen
-        // Dies wird so früh wie möglich ausgeführt, um "Flickern" zu minimieren.
         (function() {
             const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
             const storedTheme = localStorage.getItem('theme');
             if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
                 document.documentElement.classList.add('dark-mode');
             } else {
-                document.documentElement.classList.remove('dark-mode'); // Explizit entfernen für den Fall, dass es mal gesetzt war
+                document.documentElement.classList.remove('dark-mode');
             }
         })();
     </script>
@@ -35,7 +34,7 @@
                         <input type="checkbox" id="theme-checkbox" />
                         <div class="slider"></div>
                     </label>
-                    <span id="theme-label" style="display:none;">Dark Mode</span> <!-- Kann per JS befüllt werden, wenn Text gewünscht -->
+                    <span id="theme-label" style="display:none;">Dark Mode</span>
                 </div>
             </div>
         </header>
@@ -59,11 +58,12 @@
                         <tr>
                             <th>Instanzname</th>
                             <th>Status</th>
+                            <th>Port</th>
                             <th style="width: 300px;">Aktionen</th>
                         </tr>
                     </thead>
                     <tbody id="instanceTableBody">
-                        <tr><td colspan="3" style="text-align:center; padding: 30px; color: var(--text-color-tertiary);">Lade Instanzen...</td></tr>
+                        <tr><td colspan="4" style="text-align:center; padding: 30px; color: var(--text-color-tertiary);">Lade Instanzen...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -107,7 +107,22 @@
                 <p class="form-hint">Überschreibt Standard Aikar's Flags, wenn nicht leer.</p>
 
                 <label for="server_args">Zusätzliche Server Argumente:</label>
-                <input type="text" id="server_args" name="server_args" value="nogui" placeholder="Standard: nogui">
+                <input list="server_args_suggestions" type="text" id="server_args" name="server_args" value="nogui" placeholder="Standard: nogui">
+                <datalist id="server_args_suggestions">
+                    <option value="nogui"></option>
+                    <option value="--nogui"></option>
+                    <option value="--port 25566"></option>
+                    <option value="--world MEINE_WELT_ORDNERNAME"></option>
+                    <option value="--forceUpgrade"></option>
+                    <option value="--eraseCache"></option>
+                    <option value="--bonusChest"></option>
+                    <option value="--jfrProfile"></option>
+                    <option value="--serverId YOUR_SERVER_ID"></option> <!-- Für z.B. Velocity -->
+                    <option value="--maxPlayers 20"></option>
+                    <option value="--online-mode true"></option>
+                    <option value="--online-mode false"></option>
+                </datalist>
+                <p class="form-hint">Standard: nogui. Beginne zu tippen für Vorschläge.</p>
 
                 <h3 style="margin-top: 25px; font-size: 1.2em;">RCON Konfiguration (optional)</h3>
                 <p class="form-hint">Erfordert <code>enable-rcon=true</code> in <code>server.properties</code> der Instanz.</p>
@@ -177,7 +192,7 @@
         const rconInputArea = document.getElementById('rconInputArea');
         const rconCommandInput = document.getElementById('rconCommandInput');
         const rconResponseOutput = document.getElementById('rconResponseOutput');
-        const logOutputContainer = document.getElementById('logOutputContainer'); // Definiert für scrollToLogBottom
+        const logOutputContainer = document.getElementById('logOutputContainer');
 
         let currentLogViewInstanceName = null;
         let logEventSource = null;
@@ -191,7 +206,7 @@
         function applyTheme(theme) {
             if (theme === 'dark') {
                 currentHtml.classList.add('dark-mode');
-                currentBody.classList.add('dark-mode'); // Auch für Body, falls spezifische Body-Stile
+                currentBody.classList.add('dark-mode');
                 if(themeCheckbox) themeCheckbox.checked = true;
             } else {
                 currentHtml.classList.remove('dark-mode');
@@ -200,7 +215,6 @@
             }
         }
 
-        // Beim Laden der Seite Theme setzen und Listener registrieren
         document.addEventListener('DOMContentLoaded', () => {
             const storedTheme = localStorage.getItem('theme');
             const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -210,7 +224,7 @@
             } else if (prefersDark) {
                 applyTheme('dark');
             } else {
-                applyTheme('light'); // Standard
+                applyTheme('light');
             }
 
             if (themeCheckbox) {
@@ -221,12 +235,12 @@
                 });
             }
             
-            refreshStatuses(); // Initialen Status laden
-            setInterval(refreshStatuses, 10000); // Periodisch aktualisieren
+            refreshStatuses();
+            setInterval(refreshStatuses, 10000);
         });
         
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-            if (!localStorage.getItem('theme')) { // Nur OS-Präferenz anwenden, wenn Nutzer nicht explizit gewählt hat
+            if (!localStorage.getItem('theme')) {
                 applyTheme(event.matches ? 'dark' : 'light');
             }
         });
@@ -235,7 +249,6 @@
         function displayMessage(text, type = 'info') {
             messageDiv.textContent = text;
             messageDiv.className = `message ${type}`;
-            // Sichtbarkeit wird durch die CSS-Klassen .success, .error etc. gesteuert
             setTimeout(() => {
                 messageDiv.textContent = '';
                 messageDiv.className = 'message';
@@ -255,7 +268,7 @@
         useScreenCheckbox.addEventListener('change', function() {
             screenNameGroup.style.display = this.checked ? 'block' : 'none';
         });
-        screenNameGroup.style.display = useScreenCheckbox.checked ? 'block' : 'none'; // Initial
+        screenNameGroup.style.display = useScreenCheckbox.checked ? 'block' : 'none';
 
         serverForm.addEventListener('submit', async function(event) {
             event.preventDefault();
@@ -266,10 +279,7 @@
                 const response = await fetch('/start_server', { method: 'POST', body: formData });
                 const result = await response.json();
                 displayMessage(result.message, result.status);
-                if (result.status === 'success') {
-                    // Formular nicht unbedingt zurücksetzen, damit Nutzer Konfig leicht anpassen kann
-                    // serverForm.reset(); 
-                }
+                // if (result.status === 'success') serverForm.reset(); // Optional: Formular zurücksetzen
             } catch (error) {
                 displayMessage('Netzwerkfehler: ' + error.message, 'error');
             } finally {
@@ -294,7 +304,7 @@
             } else {
                 rconInputArea.style.display = 'none';
             }
-            fetchInstanceLogs(true, true); // isInitialLoad=true, forceSnapshot=true
+            fetchInstanceLogs(true, true);
         }
         
         function manualLogReload() {
@@ -361,7 +371,7 @@
         function scrollToLogBottom() { 
             if(logOutputContainer) logOutputContainer.scrollTop = logOutputContainer.scrollHeight; 
         }
-        if(logOutputContainer) { // Event Listener nur hinzufügen, wenn Element existiert
+        if(logOutputContainer) {
             logOutputContainer.addEventListener('scroll', function() { 
                 autoScrollLogs = (this.scrollTop + this.clientHeight >= this.scrollHeight - 20);
             });
@@ -407,7 +417,6 @@
         }
         rconCommandInput.addEventListener('keypress', function(event) { if (event.key === 'Enter') { event.preventDefault(); sendRconCommand(); } });
 
-        // --- Instanz Aktionen (Start, Stop, Restart, Delete) ---
         async function handleInstanceAction(action, instanceName) {
             console.log(`handleInstanceAction: ${action}, ${instanceName}, Type: ${typeof instanceName}`);
             if (typeof instanceName !== 'string' || !instanceName) { 
@@ -415,7 +424,6 @@
                 console.error("Ungültiger Instanzname:", instanceName); return; 
             }
             
-            // Versuche, den Button spezifischer zu finden, falls mehrere Aktionen den gleichen Text haben
             const button = document.querySelector(`.actions-cell button[onclick*="'${action}', '${instanceName}'"]`);
             if(button) button.disabled = true;
 
@@ -432,7 +440,7 @@
                     if (!confirm(confirmMessage1) || !confirm(confirmMessage2)) { 
                         if(button) button.disabled = false; return; 
                     }
-                    body = null; // Kein Body für Delete mit Name in URL per Konvention
+                    body = null; 
                     break;
                 default: 
                     displayMessage('Unbekannte Aktion: ' + action, 'error'); 
@@ -442,7 +450,7 @@
             displayMessage(`Aktion '${action}' für '${instanceName}' wird ausgeführt...`, 'info');
             try {
                 const fetchOptions = { method: method };
-                if (body) fetchOptions.body = body; // Body nur hinzufügen, wenn vorhanden
+                if (body) fetchOptions.body = body;
 
                 const response = await fetch(endpoint, fetchOptions);
                 const result = await response.json();
@@ -450,7 +458,6 @@
             } catch (error) {
                 displayMessage(`Netzwerkfehler bei Aktion '${action}': ${error.message}`, 'error');
             } finally {
-                // Button wieder aktivieren, falls er noch existiert (wichtig bei Delete)
                 if(button && document.body.contains(button)) {
                     button.disabled = false;
                 }
@@ -458,7 +465,6 @@
             }
         }
 
-        // --- Status Aktualisierung der Tabelle ---
         async function refreshStatuses() {
             try {
                 const response = await fetch('/server_status');
@@ -469,7 +475,7 @@
                 console.error("Fehler Serverstatus:", error);
                 const tableBody = document.getElementById('instanceTableBody');
                 if (!tableBody.querySelector('tr[data-instance-name]')) {
-                    tableBody.innerHTML = `<tr><td colspan="3" class="message error" style="text-align:center;">Fehler Status: ${error.message}</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="4" class="message error" style="text-align:center;">Fehler Status: ${error.message}</td></tr>`;
                 } else { 
                     displayMessage(`Status-Update fehlgeschlagen: ${error.message}`, 'warning'); 
                 }
@@ -485,7 +491,7 @@
             if (initialOrErrorRow && Object.keys(statuses).length > 0) initialOrErrorRow.remove();
 
             if (Object.keys(statuses).length === 0 && !tableBody.querySelector('tr[data-instance-name]')) {
-                 tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 30px; color: var(--text-color-tertiary);">Keine Instanzen konfiguriert oder gefunden.</td></tr>`;
+                 tableBody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 30px; color: var(--text-color-tertiary);">Keine Instanzen konfiguriert oder gefunden.</td></tr>`;
                  return;
             }
 
@@ -496,11 +502,15 @@
                     row = tableBody.insertRow(); row.dataset.instanceName = instanceNameStr;
                     row.insertCell().textContent = instanceNameStr; 
                     row.insertCell().className = 'status-cell';
+                    row.insertCell().className = 'port-cell';    // NEU: Port Zelle
                     row.insertCell().className = 'actions-cell'; 
-                    existingRows.set(instanceNameStr, row); // Wichtig: Neue Zeile zur Map hinzufügen
+                    existingRows.set(instanceNameStr, row);
                 }
                 row.cells[1].textContent = data.status_text;
-                const actionCell = row.cells[2]; actionCell.innerHTML = ''; // Alte Buttons entfernen
+                row.cells[2].textContent = data.is_running_managed ? `${data.server_port}` : '-'; // Port anzeigen
+
+                const actionCell = row.cells[3]; // Aktionen jetzt in Zelle 3
+                actionCell.innerHTML = '';
 
                 if (data.is_running_managed) {
                     actionCell.innerHTML += `<button class="action-btn destructive" onclick="handleInstanceAction('stop', '${instanceNameStr}')">Stop</button> `;
@@ -513,13 +523,11 @@
                 }
                 actionCell.innerHTML += `<button class="action-btn destructive" onclick="handleInstanceAction('delete', '${instanceNameStr}')">Löschen</button>`;
             }
-            // Zeilen für nicht mehr existierende Instanz-Ordner entfernen
             existingRows.forEach((row, name) => { 
                 if (!currentInstanceNamesInStatus.has(name)) row.remove(); 
             });
         }
         
-        // Initialisierung des Dark Mode Listeners ist oben im DOMContentLoaded
         window.addEventListener('click', function(event) { if (event.target == logModal) closeLogModal(); });
 
     </script>

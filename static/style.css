@@ -2,10 +2,11 @@
 
 /* --- Globale Variablen und Resets --- */
 :root {
+    /* Light Mode (Standard) */
     --system-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
     --background-color: #f2f2f7;
     --content-background: #ffffff;
-    --secondary-content-background: #f9f9fb; /* Sehr helles Grau */
+    --secondary-content-background: #f9f9fb;
     --text-color-primary: #1d1d1f;
     --text-color-secondary: #6e6e73;
     --text-color-tertiary: #86868b;
@@ -13,14 +14,15 @@
     --destructive-color: #ff3b30;
     --warning-color: #ff9500;
     --success-color: #34c759;
+    --info-color-bg: #e7f3fe; /* Für Info-Nachrichten */
+    --info-color-text: #0c549c; /* Für Info-Nachrichten */
     --border-color: #d1d1d6;
     --border-radius-small: 8px;
     --border-radius-medium: 12px;
-    --shadow-depth-1: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.08); /* Dezenter Schatten für Light */
+    --shadow-depth-1: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.08);
     --shadow-depth-2: 0 3px 6px rgba(0,0,0,0.06), 0 3px 6px rgba(0,0,0,0.08);
     --shadow-depth-3: 0 10px 20px rgba(0,0,0,0.05), 0 6px 6px rgba(0,0,0,0.07);
 
-    /* Spezifische Log Modal Farben (Light - falls abweichend) */
     --log-modal-bg: #1e1e1e;
     --log-modal-text: #d4d4d4;
     --log-modal-header-border: #333;
@@ -36,24 +38,24 @@
 }
 
 body.dark-mode {
-    --background-color: #1c1c1e; /* Dunkler Hintergrund */
-    --content-background: #2c2c2e; /* Dunkle Karten */
-    --secondary-content-background: #3a3a3c; /* Noch dunkler für abgesetzte Bereiche */
-    --text-color-primary: #f2f2f7; /* Heller Text */
-    --text-color-secondary: #a0a0a5; /* Helleres Grau */
-    --text-color-tertiary: #8e8e93; /* Noch helleres Grau */
-    --accent-color: #0a84ff; /* Leicht helleres Blau für Dark Mode */
+    --background-color: #1c1c1e;
+    --content-background: #2c2c2e;
+    --secondary-content-background: #3a3a3c;
+    --text-color-primary: #f2f2f7;
+    --text-color-secondary: #a0a0a5;
+    --text-color-tertiary: #8e8e93;
+    --accent-color: #0a84ff;
     --destructive-color: #ff453a;
     --warning-color: #ff9f0a;
     --success-color: #30d158;
-    --border-color: #48484a; /* Dunklere Trennlinien */
-    --shadow-depth-1: 0 1px 2px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3); /* Stärkere Schatten im Dark Mode, um Tiefe zu erzeugen */
+    --info-color-bg: #1c3a5f; /* Dunkler Info Hintergrund */
+    --info-color-text: #a8c7e9; /* Hellerer Info Text */
+    --border-color: #48484a;
+    --shadow-depth-1: 0 1px 2px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3);
     --shadow-depth-2: 0 4px 8px rgba(0,0,0,0.25), 0 4px 8px rgba(0,0,0,0.35);
     --shadow-depth-3: 0 12px 24px rgba(0,0,0,0.25), 0 8px 12px rgba(0,0,0,0.35);
 
-    /* Log Modal Farben für Dark Mode (sind schon dunkel, evtl. anpassen) */
-    /* Diese sind schon für einen Dark-Mode-ähnlichen Kontext des Modals, ggf. anpassen falls das globale Dark Theme andere Nuancen erfordert */
-    --log-modal-bg: #1a1a1d; /* Etwas dunkler als Karten, wenn Panel im Dark Mode ist */
+    --log-modal-bg: #1a1a1d;
     --log-modal-text: #e0e0e0;
     --log-modal-header-border: #404040;
     --log-modal-title-text: #ffffff;
@@ -67,11 +69,7 @@ body.dark-mode {
     --log-modal-rcon-response-border: #404040;
 }
 
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
     font-family: var(--system-font);
@@ -80,356 +78,104 @@ body {
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.3s ease, color 0.3s ease; /* Sanfter Übergang */
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-.login-body {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-}
+.login-body { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
 
-/* --- Container und Karten --- */
-.main-container {
-    max-width: 1200px;
-    margin: 30px auto;
-    padding: 20px;
-}
+.main-container { max-width: 1200px; margin: 30px auto; padding: 20px; }
+.card { background-color: var(--content-background); border-radius: var(--border-radius-medium); box-shadow: var(--shadow-depth-1); padding: 25px; margin-bottom: 30px; transition: background-color 0.3s ease, box-shadow 0.3s ease; }
+.card:last-child { margin-bottom: 0; }
+.login-card { background-color: var(--content-background); border-radius: var(--border-radius-medium); box-shadow: var(--shadow-depth-2); padding: 40px 50px; width: 100%; max-width: 420px; text-align: center; }
 
-.card {
-    background-color: var(--content-background); /* Ersetzt #ffffff */
-    border-radius: var(--border-radius-medium);
-    box-shadow: var(--shadow-depth-1);
-    padding: 25px;
-    margin-bottom: 30px;
-    transition: background-color 0.3s ease, box-shadow 0.3s ease;
-}
+h1, h2, h3, h4, h5, h6 { color: var(--text-color-primary); font-weight: 600; }
+h1 { font-size: 2.2em; font-weight: 700; margin-bottom: 10px; }
+.login-card h1 { font-size: 1.8em; margin-bottom: 15px; }
+h2 { font-size: 1.6em; margin-top: 40px; margin-bottom: 20px; padding-bottom: 10px; }
+.card h2:first-child { margin-top: 0; }
+label { display: block; margin-top: 15px; margin-bottom: 8px; font-weight: 500; font-size: 0.9em; color: var(--text-color-secondary); }
+small, .form-hint { font-size: 0.8em; color: var(--text-color-tertiary); display: block; margin-top: -5px; margin-bottom: 10px; }
 
-.card:last-child {
-    margin-bottom: 0;
+input[type="text"], input[type="password"], select, textarea {
+    width: 100%; padding: 12px 15px; margin-bottom: 10px; border: 1px solid var(--border-color);
+    background-color: var(--secondary-content-background); border-radius: var(--border-radius-small);
+    font-size: 1em; color: var(--text-color-primary); transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
+input[type="text"]:focus, input[type="password"]:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 20%, transparent);
+}
+.login-card input[type="text"], .login-card input[type="password"] { padding: 12px; margin-bottom: 15px;}
+input[type="checkbox"] { margin-right: 8px; vertical-align: middle; width: 18px; height: 18px; accent-color: var(--accent-color); }
+.checkbox-label { display: inline-flex; align-items: center; font-weight: normal; color: var(--text-color-primary); font-size: 0.95em; }
+textarea { min-height: 100px; resize: vertical; }
 
-.login-card {
-    background-color: var(--content-background);
-    border-radius: var(--border-radius-medium);
-    box-shadow: var(--shadow-depth-2);
-    padding: 40px 50px;
-    width: 100%;
-    max-width: 420px;
-    text-align: center;
-}
-
-/* --- Typografie --- */
-h1, h2, h3, h4, h5, h6 {
-    color: var(--text-color-primary); /* Ersetzt #1c1e21 */
-    font-weight: 600;
-}
-
-h1 {
-    font-size: 2.2em; /* Größerer Haupttitel */
-    font-weight: 700;
-    margin-bottom: 10px;
-}
-.login-card h1 {
-    font-size: 1.8em;
-    margin-bottom: 15px;
-}
-
-h2 {
-    font-size: 1.6em;
-    margin-top: 40px;
-    margin-bottom: 20px;
-    padding-bottom: 10px;
-    /* Keine harte Border, eher durch Abstand und Kontext trennen */
-}
-.card h2:first-child {
-    margin-top: 0;
-}
-
-
-label {
-    display: block;
-    margin-top: 15px;
-    margin-bottom: 8px;
-    font-weight: 500; /* Medium weight */
-    font-size: 0.9em;
-    color: var(--text-color-secondary);
-}
-
-small, .form-hint {
-    font-size: 0.8em;
-    color: var(--text-color-tertiary);
-    display: block;
-    margin-top: -5px;
-    margin-bottom: 10px;
-}
-
-/* --- Formularelemente --- */
-input[type="text"],
-input[type="password"],
-select,
-textarea {
-    width: 100%;
-    padding: 12px 15px;
-    margin-bottom: 10px;
-    border: 1px solid var(--border-color);
-    background-color: var(--secondary-content-background); /* Leicht abgesetzter Hintergrund */
-    border-radius: var(--border-radius-small);
-    font-size: 1em;
-    color: var(--text-color-primary);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-input[type="text"]:focus,
-input[type="password"]:focus,
-select:focus,
-textarea:focus {
-    outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2); /* Fokusschatten */
-}
-
-input[type="checkbox"] {
-    margin-right: 8px;
-    vertical-align: middle;
-    width: 18px;
-    height: 18px;
-    accent-color: var(--accent-color); /* Färbt die Checkbox selbst */
-}
-.checkbox-label { /* Für das Label neben der Checkbox */
-    display: inline-flex;
-    align-items: center;
-    font-weight: normal;
-    color: var(--text-color-primary);
-    font-size: 0.95em;
-}
-
-
-textarea {
-    min-height: 100px;
-    resize: vertical;
-}
-
-/* --- Buttons --- */
 button, .button {
-    background-color: var(--accent-color);
-    color: white;
-    padding: 10px 20px;
-    border: none;
-    border-radius: var(--border-radius-small);
-    cursor: pointer;
-    font-size: 1em;
-    font-weight: 500; /* Medium */
-    text-decoration: none;
-    display: inline-block;
-    margin-right: 10px;
-    margin-top: 10px;
-    transition: background-color 0.15s ease-in-out, transform 0.1s ease;
-    text-align: center;
+    background-color: var(--accent-color); color: white; padding: 10px 20px; border: none;
+    border-radius: var(--border-radius-small); cursor: pointer; font-size: 1em; font-weight: 500;
+    text-decoration: none; display: inline-block; margin-right: 10px; margin-top: 10px;
+    transition: background-color 0.15s ease-in-out, transform 0.1s ease; text-align: center;
 }
-button:hover, .button:hover {
-    background-color: #0060cc; /* Dunkleres Blau beim Hover */
-}
-button:active, .button:active {
-    transform: scale(0.98); /* Leichter Klick-Effekt */
-}
-button:disabled, .button:disabled {
-    background-color: #b5b5b7;
-    color: #f2f2f2;
-    cursor: not-allowed;
-}
-
-.login-card button { /* Login Button */
-    width: 100%;
-    padding: 14px;
-    font-size: 1.05em;
-    margin-top: 20px;
-}
-
-button.action-btn { /* Kleinere Aktionsbuttons in Tabellen etc. */
-    font-size: 0.875em;
-    padding: 7px 14px;
-    font-weight: 500;
-}
-button.action-btn.secondary {
-    background-color: var(--secondary-content-background);
-    color: var(--accent-color);
-    border: 1px solid var(--border-color); /* Leichter Rand für sekundäre Buttons */
-}
-button.action-btn.secondary:hover {
-    background-color: #e8e8ed;
-}
-
-
+button:hover, .button:hover { background-color: color-mix(in srgb, var(--accent-color) 85%, black); }
+button:active, .button:active { transform: scale(0.98); }
+button:disabled, .button:disabled { background-color: color-mix(in srgb, var(--text-color-tertiary) 50%, transparent); color: var(--text-color-tertiary); cursor: not-allowed; }
+.login-card button { width: 100%; padding: 14px; font-size: 1.05em; margin-top: 20px; }
+button.action-btn { font-size: 0.875em; padding: 7px 14px; font-weight: 500; }
+button.action-btn.secondary { background-color: var(--secondary-content-background); color: var(--accent-color); border: 1px solid var(--border-color); }
+button.action-btn.secondary:hover { background-color: color-mix(in srgb, var(--secondary-content-background) 85%, black); }
 button.destructive, .button.destructive { background-color: var(--destructive-color); }
-button.destructive:hover, .button.destructive:hover { background-color: #d6281e; }
+button.destructive:hover, .button.destructive:hover { background-color: color-mix(in srgb, var(--destructive-color) 85%, black); }
+button.warning, .button.warning { background-color: var(--warning-color); color: white; } /* Textfarbe für Warning ggf. anpassen */
+button.warning:hover, .button.warning:hover { background-color: color-mix(in srgb, var(--warning-color) 85%, black); }
 
-button.warning, .button.warning { background-color: var(--warning-color); color: white; }
-button.warning:hover, .button.warning:hover { background-color: #e08100; }
-
-/* --- Nachrichten/Alerts --- */
-.messages-container {
-    margin-bottom: 20px;
-}
-.message {
-    padding: 12px 18px;
-    margin-bottom: 15px;
-    border-radius: var(--border-radius-small);
-    font-size: 0.95em;
-    display: none; /* Wird per JS angezeigt */
-    border-width: 1px;
-    border-style: solid;
-}
-.message.success { background-color: #e6f6e9; color: #206a32; border-color: var(--success-color); display: block !important;}
-.message.error   { background-color: #ffebee; color: #c62828; border-color: var(--destructive-color); display: block !important;}
-.message.warning { background-color: #fff8e1; color: #b47400; border-color: var(--warning-color); display: block !important;}
-.message.info    { background-color: #e7f3fe; color: #0c549c; border-color: var(--accent-color); display: block !important;}
+.messages-container { margin-bottom: 20px; }
+.message { padding: 12px 18px; margin-bottom: 15px; border-radius: var(--border-radius-small); font-size: 0.95em; display: none; border-width: 1px; border-style: solid; }
+.message.success { background-color: color-mix(in srgb, var(--success-color) 15%, transparent); color: var(--success-color); border-color: var(--success-color); display: block !important;}
+.message.error   { background-color: color-mix(in srgb, var(--destructive-color) 15%, transparent); color: var(--destructive-color); border-color: var(--destructive-color); display: block !important;}
+.message.warning { background-color: color-mix(in srgb, var(--warning-color) 15%, transparent); color: var(--warning-color); border-color: var(--warning-color); display: block !important;}
+.message.info    { background-color: var(--info-color-bg); color: var(--info-color-text); border-color: var(--accent-color); display: block !important;}
 
 
-/* --- Instanz-Tabelle --- */
-.instance-list table {
-    width: 100%;
-    border-collapse: separate; /* Für abgerundete Ecken an der Tabelle selbst */
-    border-spacing: 0;
-    margin-top: 20px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-medium);
-    overflow: hidden; /* Damit Border-Radius an Ecken greift */
-}
-.instance-list th, .instance-list td {
-    padding: 12px 15px;
-    text-align: left;
-    font-size: 0.95em;
-    border-bottom: 1px solid var(--border-color);
-    vertical-align: middle;
-}
-.instance-list tr:last-child td {
-    border-bottom: none; /* Keine untere Border für die letzte Zeile */
-}
-.instance-list th {
-    background-color: var(--secondary-content-background);
-    font-weight: 500;
-    color: var(--text-color-secondary);
-}
-.actions-cell button {
-    margin-right: 6px;
-    margin-bottom: 6px;
-}
-.actions-cell button:last-child {
-    margin-right: 0;
-}
+.instance-list table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 20px; border: 1px solid var(--border-color); border-radius: var(--border-radius-medium); overflow: hidden; }
+.instance-list th, .instance-list td { padding: 12px 15px; text-align: left; font-size: 0.95em; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.instance-list tr:last-child td { border-bottom: none; }
+.instance-list th { background-color: var(--secondary-content-background); font-weight: 500; color: var(--text-color-secondary); }
+.actions-cell button { margin-right: 6px; margin-bottom: 6px; }
+.actions-cell button:last-child { margin-right: 0; }
 
-
-/* --- Log Modal --- */
-#logModal { display: none; position: fixed; z-index: 1050; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; background-color: rgba(0,0,0,0.4); /* Dunklerer Overlay */ justify-content: center; align-items: center; }
+#logModal { display: none; position: fixed; z-index: 1050; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
 #logModal.active { display: flex; }
-#logModalContentWrapper { background-color: var(--log-modal-bg); /* Nutzt die Modal-spezifische Variable */ color: var(--log-modal-text); background-color: #1e1e1e; /* VSCode Dark Theme ähnlich */ color: #d4d4d4; border-radius: var(--border-radius-medium); box-shadow: var(--shadow-depth-3); width: 90%; max-width: 1000px; height: 85vh; display: flex; flex-direction: column; margin: auto; }
-#logModalHeader { border-bottom: 1px solid var(--log-modal-header-border); padding: 18px 25px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-#logModalTitle { color: var(--log-modal-title-text); margin: 0; font-size: 1.25em; font-weight: 600; color: #f0f0f0;}
-.log-controls label { color: var(--log-modal-controls-text); }
-.log-controls button { background-color: var(--log-modal-controls-button-bg); color: var(--log-modal-title-text); /* Hellerer Text für Button */ }
+#logModalContentWrapper { background-color: var(--log-modal-bg); color: var(--log-modal-text); border-radius: var(--border-radius-medium); box-shadow: var(--shadow-depth-3); width: 90%; max-width: 1000px; height: 85vh; display: flex; flex-direction: column; margin: auto; }
+#logModalHeader { padding: 18px 25px; border-bottom: 1px solid var(--log-modal-header-border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+#logModalTitle { margin: 0; font-size: 1.25em; font-weight: 600; color: var(--log-modal-title-text);}
+.log-controls { display: flex; align-items: center; }
+.log-controls label { color: var(--log-modal-controls-text); margin-right: 12px; margin-top:0; margin-bottom:0; font-size: 0.85em; display: inline-flex; align-items: center; }
+.log-controls input[type="checkbox"] { margin-right: 6px; accent-color: var(--accent-color); }
+.log-controls button { font-size:0.8em; padding: 6px 12px; background-color: var(--log-modal-controls-button-bg); margin-left:10px; color: var(--log-modal-title-text); }
 .log-controls button:hover { background-color: var(--log-modal-controls-button-hover-bg); }
-.close-button { color: var(--log-modal-controls-text); } /* Gleiche Farbe wie Label */
-.close-button:hover { color: var(--log-modal-title-text); } /* Heller beim Hover */
-.close-button { color: #888; font-size: 1.8em; line-height:1; font-weight: bold; cursor: pointer; background: none; border: none; padding: 0 8px; }
-.close-button:hover { color: #ccc; }
+.close-button { color: var(--log-modal-controls-text); font-size: 1.8em; line-height:1; font-weight: bold; cursor: pointer; background: none; border: none; padding: 0 8px; }
+.close-button:hover { color: var(--log-modal-title-text); }
 #logOutputContainer { flex-grow: 1; overflow-y: auto; padding: 15px 25px; }
 #logOutput { font-family: "Menlo", "Monaco", "Consolas", "Courier New", monospace; font-size: 0.9em; white-space: pre-wrap; word-break: break-word; margin: 0; line-height: 1.7; }
-.log-line-error { color: #ff8080; }
-.log-line-warn { color: #ffd700; }
+.log-line-error { color: #ff8080; } /* Bleibt hellrot für gute Sichtbarkeit */
+.log-line-warn { color: #ffd700; } /* Bleibt hellgelb */
 
-#rconInputArea {
-    border-top: 1px solid var(--log-modal-header-border);
-    background-color: var(--log-modal-rcon-bg);
-}
-#rconInputArea button { width: auto; padding: 10px 18px; flex-shrink: 0; background-color: var(--accent-color); }
-#rconCommandInput {
-    background-color: var(--log-modal-rcon-input-bg);
-    color: var(--log-modal-text); /* Gleicher Text wie im Modal allgemein */
-    border: 1px solid var(--log-modal-rcon-input-border);
-}
-#rconResponseOutput {
-    background-color: var(--log-modal-bg); /* Oder eine leicht andere Nuance */
-    color: var(--log-modal-rcon-response-text);
-    border: 1px solid var(--log-modal-rcon-response-border);
-}
+#rconInputArea { padding: 15px 25px; border-top: 1px solid var(--log-modal-header-border); display: none; flex-wrap: wrap; align-items: center; flex-shrink: 0; background-color: var(--log-modal-rcon-bg); }
+#rconCommandInput { flex-grow: 1; min-width: 200px; margin-right: 10px; margin-bottom: 0; background-color: var(--log-modal-rcon-input-bg); color: var(--log-modal-text); border: 1px solid var(--log-modal-rcon-input-border); border-radius: var(--border-radius-small); padding: 10px 12px;}
+#rconInputArea button { width: auto; padding: 10px 18px; flex-shrink: 0; background-color: var(--accent-color); } /* RCON Senden Button Akzentfarbe */
+#rconResponseOutput { font-family: "Menlo", monospace; font-size: 0.85em; margin-top: 12px; max-height: 100px; overflow-y: auto; background-color: var(--log-modal-bg); padding: 10px; border-radius: var(--border-radius-small); width: 100%; white-space: pre-wrap; color: var(--log-modal-rcon-response-text); box-sizing: border-box; border: 1px solid var(--log-modal-rcon-response-border);}
 
-/* --- Header mit Logout --- */
-.panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px; /* Mehr Abstand nach unten */
-    padding-bottom:15px;
-    /* Kein harter Border, Trennung durch Abstand oder subtile Linie, falls nötig */
-}
-.panel-header h1 {
-    margin-bottom: 0; /* Titel direkt im Header */
-}
-.panel-header .user-info {
-    text-align: right;
-    font-size: 0.9em;
-    color: var(--text-color-secondary);
-}
-.panel-header .user-info strong {
-    color: var(--text-color-primary);
-}
-.panel-header .user-info .button {
-    background-color: var(--secondary-content-background);
-    color: var(--accent-color);
-    font-size:0.9em;
-    padding: 6px 12px;
-    margin-top:8px;
-    border: 1px solid var(--border-color);
-}
-.panel-header .user-info .button:hover {
-    background-color: #e8e8ed;
-}
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom:15px; border-bottom: 1px solid var(--border-color); }
+.panel-header h1 { margin-bottom: 0; }
+.panel-header .user-info { text-align: right; font-size: 0.9em; color: var(--text-color-secondary); }
+.panel-header .user-info strong { color: var(--text-color-primary); }
+.panel-header .user-info .button { background-color: var(--secondary-content-background); color: var(--accent-color); font-size:0.9em; padding: 6px 12px; margin-top:8px; border: 1px solid var(--border-color); }
+.panel-header .user-info .button:hover { background-color: color-mix(in srgb, var(--secondary-content-background) 85%, var(--text-color-primary) 15%) ; } /* Leicht dunkler beim Hover */
 
-.theme-switch-wrapper {
-    display: flex;
-    align-items: center;
-    /* Positionierung des Schalters, z.B. oben rechts */
-}
-.theme-switch {
-    display: inline-block;
-    height: 24px; /* Kleinere Höhe für den Schalter */
-    position: relative;
-    width: 44px; /* Kleinere Breite */
-}
-.theme-switch input {
-    display:none;
-}
-.slider {
-    background-color: #ccc; /* Hintergrund des Schalters im Light Mode */
-    bottom: 0;
-    cursor: pointer;
-    left: 0;
-    position: absolute;
-    right: 0;
-    top: 0;
-    transition: .4s;
-    border-radius: 24px; /* Vollständig abgerundet */
-}
-body.dark-mode .slider {
-    background-color: var(--accent-color); /* Hintergrund des Schalters im Dark Mode */
-}
-.slider:before {
-    background-color: #fff; /* Knubbel des Schalters */
-    bottom: 3px; /* Anpassung für kleinere Höhe */
-    content: "";
-    height: 18px; /* Kleinerer Knubbel */
-    left: 3px;  /* Anpassung für kleinere Breite */
-    position: absolute;
-    transition: .4s;
-    width: 18px; /* Kleinerer Knubbel */
-    border-radius: 50%;
-}
-input:checked + .slider:before {
-    transform: translateX(20px); /* Anpassung für kleinere Breite */
-}
-.theme-switch-wrapper span {
-    margin-left: 8px;
-    font-size: 0.9em;
-    color: var(--text-color-secondary);
-}
+.theme-switch-wrapper { display: flex; align-items: center; }
+.theme-switch { display: inline-block; height: 24px; position: relative; width: 44px; }
+.theme-switch input { display:none; }
+.slider { background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: .4s; border-radius: 24px; }
+body.dark-mode .slider { background-color: var(--accent-color); } /* Akzentfarbe wenn aktiv */
+.slider:before { background-color: white; bottom: 3px; content: ""; height: 18px; left: 3px;  position: absolute; transition: .4s; width: 18px; border-radius: 50%; }
+input:checked + .slider:before { transform: translateX(20px); }
+.theme-switch-wrapper span { margin-left: 8px; font-size: 0.9em; color: var(--text-color-secondary); }

@@ -2,23 +2,24 @@ from flask import Flask, render_template, request, jsonify, Response, redirect, 
 import subprocess
 import os
 import shlex
-import signal
+import signal as signal_module # Umbenannt, um Kollision mit Variable zu vermeiden
 import time
 import logging
 import json
 import shutil
 from mcrcon import MCRcon, MCRconException
 import socket
-from functools import wraps # Für den Login-Decorator
+from functools import wraps
+import re
 
 # Logging-Konfiguration
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(name)s %(threadName)s : %(message)s')
 werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.setLevel(logging.INFO)
 
-# --- BEGIN MONKEYPATCH für mcrcon (wie in der vorherigen korrigierten Version) ---
-_original_signal_signal = signal.signal
-_original_signal_alarm = signal.alarm
+# --- BEGIN MONKEYPATCH für mcrcon ---
+_original_signal_signal = signal_module.signal
+_original_signal_alarm = signal_module.alarm
 _original_MCRcon_init = MCRcon.__init__
 _original_MCRcon_connect = MCRcon.connect
 _original_MCRcon_command = MCRcon.command
@@ -28,33 +29,31 @@ def _patched_mcrcon_init(self, host, password, port=25575, timeout=5, tlsmode=0,
     self.timeout = timeout if timeout and timeout > 0 else 5
     self.tlsmode = tlsmode; self.tls_certfile = tls_certfile; self.tls_keyfile = tls_keyfile
     self.tls_ca_certs = tls_ca_certs; self.family = family; self.socket = None
-    # signal.signal(signal.SIGALRM, self.__timeout_handler) WIRD WEGGELASSEN
-    # logging.getLogger('app').debug(f"Patched MCRcon.__init__ for {self.host}:{self.port}. Signal handler registration skipped.") # Verwende app.logger
+    # logging.getLogger('app').debug(f"Patched MCRcon.__init__ for {self.host}:{self.port}. Signal handler registration skipped.")
 
 def _patched_mcrcon_connect(self):
     if self.socket: return
     # logging.getLogger('app').debug(f"Patched MCRcon.connect: Calling original connect for {self.host}:{self.port}")
-    current_alarm = signal.alarm; signal.alarm = lambda t: logging.getLogger('app').debug(f"Patched MCRcon.connect: Skipped signal.alarm({t})")
+    current_alarm = signal_module.alarm; signal_module.alarm = lambda t: logging.getLogger('app').debug(f"Patched MCRcon.connect: Skipped signal_module.alarm({t})")
     try:
         _original_MCRcon_connect(self)
         if self.socket:
             socket_timeout = self.timeout
             if socket_timeout is None or socket_timeout <= 0: socket_timeout = 5
             self.socket.settimeout(socket_timeout)
-            # logging.getLogger('app').debug(f"Patched MCRcon.connect: Socket timeout set to {socket_timeout}s after original connect.")
     except Exception as e: raise
-    finally: signal.alarm = current_alarm
+    finally: signal_module.alarm = current_alarm
 
 def _patched_mcrcon_command(self, command_str):
     if not self.socket: _patched_mcrcon_connect(self)
-    current_alarm = signal.alarm
-    signal.alarm = lambda t: logging.getLogger('app').debug(f"Patched MCRcon.command: Skipped signal.alarm({t}) for command '{command_str}'")
+    current_alarm = signal_module.alarm
+    signal_module.alarm = lambda t: logging.getLogger('app').debug(f"Patched MCRcon.command: Skipped signal_module.alarm({t}) for command '{command_str}'")
     try:
         response = _original_MCRcon_command(self, command_str)
         return response
     except socket.timeout: raise MCRconException("RCON command timed out (socket timeout)")
     except Exception as e: raise
-    finally: signal.alarm = current_alarm
+    finally: signal_module.alarm = current_alarm
 
 MCRcon.__init__ = _patched_mcrcon_init
 MCRcon.connect = _patched_mcrcon_connect
@@ -62,18 +61,16 @@ MCRcon.command = _patched_mcrcon_command
 # --- END MONKEYPATCH ---
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24) # Wichtig für Flask-Sessions
+app.secret_key = os.urandom(24)
 
-# --- Konfiguration (Benutzername und Passwort für Login) ---
-# !!! NIEMALS SO IN PRODUKTION VERWENDEN !!!
+# --- Konfiguration ---
 PANEL_USERNAME = "root"
-PANEL_PASSWORD = "Potato" # Einfach schrecklich, aber für das Beispiel...
-
+PANEL_PASSWORD = "Potato"
 SERVER_VERSIONS_BASE_PATH = os.environ.get("MC_SERVER_VERSIONS_PATH", "/opt/minecraft_versions")
 INSTANCES_BASE_PATH = os.environ.get("MC_INSTANCES_PATH", "/srv/minecraft_servers")
 os.makedirs(SERVER_VERSIONS_BASE_PATH, exist_ok=True)
 os.makedirs(INSTANCES_BASE_PATH, exist_ok=True)
-running_servers = {} # (Restliche globale Konfigurationen unverändert)
+running_servers = {}
 DEFAULT_MIN_RAM = "1G"; DEFAULT_MAX_RAM = "2G"
 DEFAULT_JAVA_ARGS = ("-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 "
     "-XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch "
@@ -83,7 +80,7 @@ DEFAULT_JAVA_ARGS = ("-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMil
     "-XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem "
     "-XX:MaxTenuringThreshold=1 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true")
 DEFAULT_SERVER_ARGS = "nogui"; DEFAULT_RCON_PORT = 25575
-
+DEFAULT_MINECRAFT_PORT = 25565
 
 # --- Decorator für Login-Prüfung ---
 def login_required(f):
@@ -95,11 +92,12 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- Hilfsfunktionen Konfig (unverändert) ---
-def get_instance_config_path(instance_name): #...
+# --- Hilfsfunktionen Konfig ---
+def get_instance_config_path(instance_name):
     instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name)
     return os.path.join(instance_dir, "panel_config.json")
-def load_instance_config(instance_name): #...
+
+def load_instance_config(instance_name):
     config_path = get_instance_config_path(instance_name)
     if os.path.exists(config_path):
         try:
@@ -107,7 +105,8 @@ def load_instance_config(instance_name): #...
         except json.JSONDecodeError as e: app.logger.error(f"JSONDecodeError '{instance_name}': {e}")
         except Exception as e: app.logger.error(f"Fehler Laden Konfig '{instance_name}': {e}")
     return None
-def save_instance_config(instance_name, config_data): #...
+
+def save_instance_config(instance_name, config_data):
     instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name)
     os.makedirs(instance_dir, exist_ok=True)
     config_path = get_instance_config_path(instance_name)
@@ -116,41 +115,75 @@ def save_instance_config(instance_name, config_data): #...
         app.logger.info(f"Konfig für '{instance_name}' gespeichert: {config_path}")
     except Exception as e: app.logger.error(f"Fehler Speichern Konfig '{instance_name}': {e}")
 
-# --- Hilfsfunktionen Server (unverändert) ---
-def get_available_server_jars(): #...
+# --- Hilfsfunktionen Server ---
+def get_available_server_jars():
     if not os.path.exists(SERVER_VERSIONS_BASE_PATH): app.logger.warning(f"JAR-Verzeichnis nicht da: {SERVER_VERSIONS_BASE_PATH}"); return []
     try:
         return sorted([f for f in os.listdir(SERVER_VERSIONS_BASE_PATH) if os.path.isfile(os.path.join(SERVER_VERSIONS_BASE_PATH, f)) and f.endswith('.jar')])
     except Exception as e: app.logger.error(f"Fehler Lesen JARs '{SERVER_VERSIONS_BASE_PATH}': {e}"); return []
-def get_log_file_path_for_instance(instance_name): #...
+
+def get_log_file_path_for_instance(instance_name):
     instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name)
     return os.path.join(instance_dir, "logs", "latest.log")
-def _start_server_process(instance_name, config): #... (RCON-Teil bleibt)
+
+def parse_server_port_from_args(server_args_str):
+    if not server_args_str: return DEFAULT_MINECRAFT_PORT
+    match = re.search(r'(?:--port|-p)\s+(\d+)', server_args_str)
+    if match:
+        try: return int(match.group(1))
+        except ValueError: pass
+    return DEFAULT_MINECRAFT_PORT
+
+def _start_server_process(instance_name, config):
     instance_dir = os.path.join(INSTANCES_BASE_PATH, instance_name); os.makedirs(instance_dir, exist_ok=True)
     server_jar_name = config.get('server_jar')
     if not server_jar_name: return None, "Fehler: Server-JAR nicht spezifiziert."
     server_jar_path = os.path.join(SERVER_VERSIONS_BASE_PATH, server_jar_name)
     if not os.path.isfile(server_jar_path): return None, f"Fehler: Server-JAR '{server_jar_path}' nicht gefunden."
+    
     eula_path = os.path.join(instance_dir, "eula.txt")
     try:
         if not os.path.exists(eula_path) or "eula=true" not in open(eula_path, encoding='utf-8').read():
             with open(eula_path, "w", encoding='utf-8') as f: f.write("eula=true\n")
-            app.logger.info(f"EULA für '{instance_name}' akzeptiert.")
     except Exception as e: app.logger.error(f"Fehler EULA '{instance_name}': {e}")
+
     server_props_path = os.path.join(instance_dir, "server.properties"); rcon_enabled_by_panel = False
-    if config.get('rcon_password') and config.get('rcon_port'):
+    current_server_port_from_props = DEFAULT_MINECRAFT_PORT # Fallback
+    
+    # Lese zuerst bestehende server.properties, falls vorhanden
+    props_content = {}
+    if os.path.exists(server_props_path):
         try:
-            props_content = {}
-            if os.path.exists(server_props_path):
-                with open(server_props_path, 'r', encoding='utf-8') as f_props:
-                    for line in f_props:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line: key, value = line.split('=', 1); props_content[key.strip()] = value.strip()
-            props_content['enable-rcon']='true'; props_content['rcon.port']=str(config['rcon_port']); props_content['rcon.password']=config['rcon_password']
-            with open(server_props_path, 'w', encoding='utf-8') as f_props:
-                for key, value in props_content.items(): f_props.write(f"{key}={value}\n")
-            app.logger.info(f"RCON in server.properties für '{instance_name}' gesetzt."); rcon_enabled_by_panel = True
-        except Exception as e: app.logger.error(f"Fehler Schreiben RCON server.properties '{instance_name}': {e}")
+            with open(server_props_path, 'r', encoding='utf-8') as f_props:
+                for line in f_props:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1); props_content[key.strip()] = value.strip()
+            if 'server-port' in props_content:
+                current_server_port_from_props = int(props_content['server-port'])
+        except Exception as e:
+            app.logger.warning(f"Konnte server.properties für '{instance_name}' nicht vollständig lesen: {e}")
+
+
+    # RCON Einstellungen anwenden/überschreiben
+    if config.get('rcon_password') and config.get('rcon_port'):
+        props_content['enable-rcon']='true'
+        props_content['rcon.port']=str(config['rcon_port'])
+        props_content['rcon.password']=config['rcon_password']
+        rcon_enabled_by_panel = True
+    
+    # Server-Port bestimmen und in server.properties setzen/überschreiben
+    # Priorität: 1. server_args, 2. server.properties (gelesener Wert), 3. Default
+    server_port_from_args = parse_server_port_from_args(config.get('server_args', DEFAULT_SERVER_ARGS))
+    final_server_port = server_port_from_args if server_port_from_args != DEFAULT_MINECRAFT_PORT else current_server_port_from_props
+    props_content['server-port'] = str(final_server_port)
+
+    try: # Schreibe die aktualisierten Properties
+        with open(server_props_path, 'w', encoding='utf-8') as f_props:
+            for key, value in props_content.items(): f_props.write(f"{key}={value}\n")
+        app.logger.info(f"RCON/Server-Port in server.properties für '{instance_name}' aktualisiert.")
+    except Exception as e: app.logger.error(f"Fehler Schreiben server.properties '{instance_name}': {e}")
+
     cmd_parts = ["java", f"-Xms{config.get('min_ram', DEFAULT_MIN_RAM)}", f"-Xmx{config.get('max_ram', DEFAULT_MAX_RAM)}"]
     java_args_to_use = config.get('java_args', DEFAULT_JAVA_ARGS)
     if java_args_to_use and java_args_to_use.strip(): cmd_parts.extend(shlex.split(java_args_to_use))
@@ -158,16 +191,24 @@ def _start_server_process(instance_name, config): #... (RCON-Teil bleibt)
     cmd_parts.extend(["-jar", server_jar_path])
     server_args_to_use = config.get('server_args', DEFAULT_SERVER_ARGS)
     if server_args_to_use and server_args_to_use.strip(): cmd_parts.extend(shlex.split(server_args_to_use))
+    
     log_dir = os.path.join(instance_dir, "logs"); os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, "latest.log")
     try:
         with open(log_file_path, 'w', encoding='utf-8') as lf: lf.write(f"--- Log {instance_name} @ {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
     except Exception as e: app.logger.error(f"Konnte Log '{log_file_path}' nicht initialisieren: {e}")
-    message_suffix = f"Server loggt nach 'logs/latest.log'."; log_handle_for_direct_start = None
+    
+    message_suffix = f"Server loggt nach 'logs/latest.log'. Port: {final_server_port}."
     if rcon_enabled_by_panel: message_suffix += f" RCON auf Port {config.get('rcon_port')}."
-    server_metadata = {'instance_dir': instance_dir, 'log_file_path': log_file_path, 'log_handle': None, 'config_snapshot': config.copy(),
+    
+    log_handle_for_direct_start = None
+    server_metadata = {
+        'instance_dir': instance_dir, 'log_file_path': log_file_path, 'log_handle': None,
+        'config_snapshot': config.copy(),
+        'server_port': final_server_port,
         'rcon_port': config.get('rcon_port') if config.get('rcon_password') else None,
-        'rcon_password': config.get('rcon_password') if config.get('rcon_port') else None}
+        'rcon_password': config.get('rcon_password') if config.get('rcon_port') else None
+    }
     if config.get('use_screen', True):
         screen_name = config.get('screen_name', '').strip() or f"mc_{instance_name.replace('.', '_').replace('-', '_')}"
         if subprocess.call("command -v screen > /dev/null", shell=True, executable='/bin/bash') != 0: return None, "'screen' nicht gefunden."
@@ -187,14 +228,12 @@ def _start_server_process(instance_name, config): #... (RCON-Teil bleibt)
             if log_handle_for_direct_start: log_handle_for_direct_start.close()
             app.logger.error(f"Fehler direkter Start '{instance_name}': {e}"); return None, f"Fehler direkter Start: {e}"
 
-
 # --- Login Routen ---
 @app.route('/login', methods=['GET', 'POST'])
 def login_route():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        # !!! EXTREM UNSICHERE AUTHENTIFIZIERUNG - NUR FÜR BEISPIEL !!!
         if username == PANEL_USERNAME and password == PANEL_PASSWORD:
             session['logged_in_user'] = username
             flash('Erfolgreich eingeloggt!', 'success')
@@ -221,12 +260,12 @@ def index():
                            initial_instances=instance_folders,
                            default_instance_path=INSTANCES_BASE_PATH,
                            default_rcon_port=DEFAULT_RCON_PORT,
-                           logged_in_user=session.get('logged_in_user')) # Für Anzeige im Header
+                           logged_in_user=session.get('logged_in_user'))
 
 # --- Geschützte API-Routen ---
 @app.route('/start_server', methods=['POST'])
 @login_required
-def start_server_from_form(): #... (wie vorher)
+def start_server_from_form():
     data = request.form
     try:
         instance_name = data.get('instance_name', '').strip(); rcon_port_str = data.get('rcon_port', '').strip()
@@ -250,7 +289,7 @@ def start_server_from_form(): #... (wie vorher)
 
 @app.route('/quick_start_server', methods=['POST'])
 @login_required
-def quick_start_server(): #... (wie vorher)
+def quick_start_server():
     data = request.form; instance_name = data.get('instance_name')
     if not instance_name: return jsonify({'status': 'error', 'message': 'Instanzname fehlt.'}), 400
     if instance_name in running_servers: return jsonify({'status': 'warning', 'message': f"'{instance_name}' läuft bereits."}), 400
@@ -268,7 +307,7 @@ def quick_start_server(): #... (wie vorher)
 
 @app.route('/stop_server', methods=['POST'])
 @login_required
-def stop_server_route(): #... (wie vorher)
+def stop_server_route():
     data = request.form; instance_name = data.get('instance_name')
     if not instance_name or instance_name not in running_servers: return jsonify({'status': 'error', 'message': f"'{instance_name}' nicht gefunden/verwaltet."}), 404
     server_info = running_servers[instance_name]; message = ""
@@ -277,7 +316,7 @@ def stop_server_route(): #... (wie vorher)
             subprocess.run(["screen", "-S", server_info['screen_name'], "-X", "stuff", "stop\r"], check=True, timeout=5)
             message = f"Stop-Befehl an Screen '{server_info['screen_name']}'."
         elif server_info['type'] == 'direct' and server_info.get('pid'):
-            os.killpg(server_info['pid'], signal.SIGINT)
+            os.killpg(server_info['pid'], signal_module.SIGINT)
             message = f"Interrupt an Prozessgruppe von PID {server_info['pid']}."
         else: return jsonify({'status': 'error', 'message': 'Unbekannter Typ/Fehlende Infos.'}), 500
         app.logger.info(f"Stopp '{instance_name}': {message}"); return jsonify({'status': 'success', 'message': message})
@@ -294,7 +333,7 @@ def stop_server_route(): #... (wie vorher)
 
 @app.route('/restart_server', methods=['POST'])
 @login_required
-def restart_server_route(): #... (wie vorher)
+def restart_server_route():
     data = request.form; instance_name = data.get('instance_name')
     if not instance_name: return jsonify({'status': 'error', 'message': 'Instanzname fehlt.'}), 400
     config_to_restart_with = None; was_running_managed = instance_name in running_servers
@@ -334,7 +373,7 @@ def restart_server_route(): #... (wie vorher)
 
 @app.route('/get_logs/<instance_name>')
 @login_required
-def get_logs(instance_name): #... (wie vorher)
+def get_logs(instance_name):
     log_file_path = get_log_file_path_for_instance(instance_name)
     if not os.path.exists(log_file_path): return jsonify({"logs": f"Logdatei nicht da: {log_file_path}", "error": True}), 404
     try:
@@ -345,7 +384,7 @@ def get_logs(instance_name): #... (wie vorher)
 
 @app.route('/stream_logs/<instance_name>')
 @login_required
-def stream_logs(instance_name): #... (wie vorher, mit korrigiertem `escaped_line` in `gen_logs`)
+def stream_logs(instance_name):
     log_file_path = get_log_file_path_for_instance(instance_name)
     def gen_logs():
         app.logger.info(f"Log-Stream '{instance_name}' ({log_file_path}).")
@@ -374,15 +413,12 @@ def stream_logs(instance_name): #... (wie vorher, mit korrigiertem `escaped_line
             time.sleep(0.2)
     return Response(gen_logs(), mimetype='text/event-stream')
 
-
 @app.route('/send_rcon_command/<instance_name>', methods=['POST'])
 @login_required
-def send_rcon_command(instance_name): # (wie vorher, mit MCRconException)
+def send_rcon_command(instance_name):
     config = None
-    if instance_name in running_servers:
-        config = running_servers[instance_name].get('config_snapshot', {})
-    else:
-        config = load_instance_config(instance_name)
+    if instance_name in running_servers: config = running_servers[instance_name].get('config_snapshot', {})
+    else: config = load_instance_config(instance_name)
     if not config: return jsonify({'status': 'error', 'message': f"Keine Konfig für Instanz '{instance_name}'."}), 404
     rcon_host = "127.0.0.1"; rcon_port = config.get('rcon_port'); rcon_password = config.get('rcon_password')
     command_to_send = request.form.get('command')
@@ -390,7 +426,7 @@ def send_rcon_command(instance_name): # (wie vorher, mit MCRconException)
     if not rcon_port or not rcon_password: return jsonify({'status': 'error', 'message': 'RCON nicht (vollständig) konfiguriert.'}), 400
     try:
         app.logger.debug(f"RCON Verbindung zu {rcon_host}:{rcon_port} für {instance_name}")
-        with MCRcon(host=rcon_host, password=rcon_password, port=int(rcon_port), timeout=5) as mcr: # Nutzt gepatchte MCRcon
+        with MCRcon(host=rcon_host, password=rcon_password, port=int(rcon_port), timeout=5) as mcr:
             app.logger.debug(f"RCON verbunden. Sende: {command_to_send}")
             response = mcr.command(command_to_send) 
             app.logger.info(f"RCON '{command_to_send}' an '{instance_name}'. Antwort: {str(response)[:100]}...")
@@ -404,7 +440,7 @@ def send_rcon_command(instance_name): # (wie vorher, mit MCRconException)
 
 @app.route('/delete_instance/<instance_name>', methods=['POST'])
 @login_required
-def delete_instance_route(instance_name): #... (wie vorher)
+def delete_instance_route(instance_name):
     app.logger.info(f"Löschanfrage für Instanz '{instance_name}' erhalten.")
     if instance_name in running_servers:
         app.logger.info(f"Instanz '{instance_name}' läuft, versuche zu stoppen vor dem Löschen.")
@@ -448,10 +484,24 @@ def delete_instance_route(instance_name): #... (wie vorher)
         if instance_name in running_servers: del running_servers[instance_name]
         return jsonify({'status': 'warning', 'message': f"Instanzverzeichnis für '{instance_name}' nicht gefunden, aber als gelöscht markiert."})
 
+# --- Hilfsfunktionen Status ---
+def is_pid_running(pid):
+    if pid is None: return False
+    try: os.kill(pid, 0); return True
+    except OSError: return False
+
+def is_screen_session_running(screen_name):
+    if not screen_name: return False
+    try:
+        result = subprocess.run(['screen', '-ls'], capture_output=True, text=True, check=False, timeout=3)
+        if result.returncode == 0 and result.stdout:
+            return f".{screen_name}\t(" in result.stdout or f"\t{screen_name}\t(" in result.stdout
+        return False
+    except: app.logger.debug(f"Fehler Prüfen Screen '{screen_name}'.", exc_info=False); return False
 
 @app.route('/server_status', methods=['GET'])
 @login_required
-def server_status_route(): #... (rcon_available Check bleibt)
+def server_status_route():
     statuses = {}
     all_instance_folders = [d for d in os.listdir(INSTANCES_BASE_PATH) if os.path.isdir(os.path.join(INSTANCES_BASE_PATH, d))] if os.path.exists(INSTANCES_BASE_PATH) else []
     stale = []
@@ -467,35 +517,44 @@ def server_status_route(): #... (rcon_available Check bleibt)
                 try: running_servers[name]['log_handle'].close()
                 except Exception as e: app.logger.debug(f"Fehler Schließen Log-Handle {name}: {e}")
             del running_servers[name]
+
     for name in all_instance_folders:
         status_txt = "Gestoppt"; log_p = get_log_file_path_for_instance(name); log_ex = os.path.exists(log_p)
         managed_run = False; has_cfg = os.path.exists(get_instance_config_path(name)); rcon_ok = False
+        current_server_port = DEFAULT_MINECRAFT_PORT 
+
         if name in running_servers:
             info = running_servers[name]; cfg_snap = info.get('config_snapshot', {})
             if info['type'] == 'direct': status_txt = f"Läuft (Direkt, PID: {info['pid']})"
             elif info['type'] == 'screen': status_txt = f"Läuft (Screen: {info['screen_name']})"
             managed_run = True
             if cfg_snap.get('rcon_port') and cfg_snap.get('rcon_password'): rcon_ok = True
+            current_server_port = info.get('server_port', DEFAULT_MINECRAFT_PORT)
         elif has_cfg:
             cfg = load_instance_config(name)
-            if cfg and cfg.get('rcon_port') and cfg.get('rcon_password'): rcon_ok = True
-        statuses[name] = {"status_text": status_txt, "log_exists": log_ex, "is_running_managed": managed_run, "has_config": has_cfg, "rcon_available": rcon_ok}
+            if cfg:
+                if cfg.get('rcon_port') and cfg.get('rcon_password'): rcon_ok = True
+                current_server_port = parse_server_port_from_args(cfg.get('server_args', ""))
+                # Hier könnte man noch server.properties lesen, falls Port nicht in Args
+                # Dies ist eine Vereinfachung für den Status-Check.
+                if current_server_port == DEFAULT_MINECRAFT_PORT: # Wenn args keinen spezifischen Port hatten
+                    sp_path = os.path.join(INSTANCES_BASE_PATH, name, "server.properties")
+                    if os.path.exists(sp_path):
+                        try:
+                            with open(sp_path, 'r') as fsp:
+                                for line in fsp:
+                                    if line.strip().startswith("server-port="):
+                                        current_server_port = int(line.split("=")[1].strip())
+                                        break
+                        except: pass
+
+
+        statuses[name] = {
+            "status_text": status_txt, "log_exists": log_ex,
+            "is_running_managed": managed_run, "has_config": has_cfg,
+            "rcon_available": rcon_ok, "server_port": current_server_port
+        }
     return jsonify(statuses)
-
-# --- Hilfsfunktionen Status (unverändert) ---
-def is_pid_running(pid): #...
-    if pid is None: return False
-    try: os.kill(pid, 0); return True
-    except OSError: return False
-def is_screen_session_running(screen_name): #...
-    if not screen_name: return False
-    try:
-        result = subprocess.run(['screen', '-ls'], capture_output=True, text=True, check=False, timeout=3)
-        if result.returncode == 0 and result.stdout:
-            return f".{screen_name}\t(" in result.stdout or f"\t{screen_name}\t(" in result.stdout
-        return False
-    except: app.logger.debug(f"Fehler Prüfen Screen '{screen_name}'.", exc_info=False); return False
-
 
 if __name__ == '__main__':
     app.logger.info(f"Starte Minecraft Server Panel...")
