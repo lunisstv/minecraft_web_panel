@@ -1,0 +1,362 @@
+/* static/style.css */
+
+/* Allgemeine Stile & Login-Seite */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    margin: 0;
+    background-color: #f0f2f5;
+    color: #1c1e21;
+    line-height: 1.5;
+}
+
+.login-body { /* Speziell für den Login-Body, um Zentrierung zu ermöglichen */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container, .login-container {
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+.container { /* Hauptpanel-Container */
+    max-width: 1100px;
+    margin: 20px auto;
+}
+
+.login-container { /* Login-Formular-Container */
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+    padding: 40px; /* Mehr Padding für Login */
+}
+
+
+h1, h2, h3 {
+    color: #1c1e21;
+    margin-top: 0;
+}
+
+h1 {
+    font-size: 2em;
+    margin-bottom: 0.5em;
+}
+
+.login-container h1 {
+    font-size: 1.8em;
+    margin-bottom: 10px;
+}
+
+h2 {
+    font-size: 1.5em;
+    margin-top: 1.5em;
+    margin-bottom: 0.75em;
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid #ccd0d5;
+}
+
+.login-container p {
+    font-size: 0.95em;
+    color: #606770;
+    margin-bottom: 25px;
+}
+
+label {
+    display: block;
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #606770;
+}
+
+input[type="text"],
+input[type="password"],
+select,
+textarea {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 0.5em;
+    border: 1px solid #ccd0d5;
+    border-radius: 6px;
+    box-sizing: border-box;
+    font-size: 1em;
+}
+
+.login-container input[type="text"],
+.login-container input[type="password"] {
+    padding: 12px; /* Etwas mehr Padding für Login-Felder */
+    margin-bottom: 15px;
+}
+
+
+input[type="checkbox"] {
+    margin-right: 0.5em;
+    vertical-align: middle;
+}
+
+textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+button, .button {
+    background-color: #1877f2;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-block;
+    margin-right: 8px;
+    margin-top: 5px;
+    transition: background-color 0.2s ease-in-out;
+}
+
+button:hover, .button:hover {
+    background-color: #166fe5;
+}
+
+.login-container button {
+    width: 100%;
+    padding: 12px;
+    font-size: 1.1em;
+}
+
+button.action-btn {
+    font-size: 0.85em;
+    padding: 6px 12px;
+}
+
+button.stop, button.delete {
+    background-color: #fa383e;
+}
+button.stop:hover, button.delete:hover {
+    background-color: #e02020;
+}
+
+button.logs {
+    background-color: #17a2b8;
+}
+button.logs:hover {
+    background-color: #138496;
+}
+
+button.restart {
+    background-color: #ffc107;
+    color: #212529; /* Dunkler Text für gelben Button */
+}
+button.restart:hover {
+    background-color: #e0a800;
+}
+
+/* Flash Nachrichten (für Login und Panel) */
+.flash-messages-container { /* Ein Container für die Nachrichten im Hauptpanel */
+    margin-top: 1.5em;
+    margin-bottom: 1em;
+}
+#message, .flash-messages ul { /* #message ist für JS-Nachrichten, .flash-messages für serverseitige */
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+#message:not(:empty), .flash-messages li { /* Stil nur anwenden, wenn Inhalt da ist */
+    padding: 12px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    font-size: 0.95em;
+}
+/* #message Klassen werden per JS gesetzt */
+.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; display: block !important; }
+.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; display: block !important; }
+.warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; display: block !important; }
+.info { background-color: #cfe2ff; color: #084298; border: 1px solid #b6d4fe; display: block !important;}
+
+
+/* Instanz-Tabelle */
+.instance-list table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1em;
+}
+.instance-list th, .instance-list td {
+    border: 1px solid #ccd0d5;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 0.95em;
+    vertical-align: middle;
+}
+.instance-list th {
+    background-color: #f5f6f7;
+    font-weight: 600;
+}
+.actions-cell button {
+    margin-bottom: 5px;
+}
+
+/* Log Modal Stile */
+#logModal {
+    display: none; /* Wird per JS zu 'flex' */
+    position: fixed;
+    z-index: 1050;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto; /* Erlaubt Scrollen, wenn Modal größer als Viewport */
+    background-color: rgba(0,0,0,0.7);
+    justify-content: center;
+    align-items: center;
+}
+#logModal.active {
+    display: flex;
+}
+#logModalContentWrapper {
+    background-color: #282c34; /* Dunkler Hintergrund für Logs */
+    color: #abb2bf; /* Heller Text für Logs */
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    width: 90%;
+    max-width: 950px;
+    min-height: 70vh; /* Nimmt mindestens 70% der Viewport-Höhe ein */
+    max-height: 85vh; /* Aber nicht mehr als 85% */
+    display: flex;
+    flex-direction: column;
+    margin: auto; /* Zentriert auch bei overflow: auto des Elternelements */
+}
+#logModalHeader {
+    padding: 15px 20px;
+    border-bottom: 1px solid #3e4451;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0; /* Header soll nicht schrumpfen */
+}
+#logModalTitle {
+    margin: 0;
+    font-size: 1.3em;
+    color: #d1d5db;
+}
+.log-controls {
+    display: flex;
+    align-items: center;
+}
+.log-controls label { /* Etiketten im Log-Modal-Header */
+    color: #9ca3af;
+    margin-right: 10px;
+    margin-top:0; margin-bottom:0; /* Überschreibe generelles Label-Margin */
+    font-size: 0.9em;
+    display: inline-flex; /* Für vertikale Ausrichtung mit Checkbox */
+    align-items: center;
+}
+.log-controls input[type="checkbox"] {
+    margin-right: 5px;
+}
+.log-controls button { /* Kleinere Buttons im Log-Modal-Header */
+    font-size:0.8em;
+    padding: 5px 10px;
+    background-color: #4b5563;
+    margin-left:10px;
+}
+.log-controls button:hover {
+    background-color: #6b7280;
+}
+.close-button { /* Schließen-Kreuz */
+    color: #9ca3af;
+    font-size: 2em;
+    line-height:1; /* Verhindert extra Höhe */
+    font-weight: bold;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0 5px; /* Etwas Klickfläche */
+}
+.close-button:hover {
+    color: #e5e7eb;
+}
+#logOutputContainer {
+    flex-grow: 1; /* Nimmt verfügbaren Platz ein */
+    overflow-y: auto; /* Scrollbar, wenn Inhalt zu groß */
+    padding: 10px 20px;
+}
+#logOutput {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 0.875em;
+    white-space: pre-wrap; /* Zeilenumbruch für lange Zeilen */
+    word-break: break-all; /* Umbruch für sehr lange Wörter/Strings ohne Leerzeichen */
+    margin: 0;
+    line-height: 1.6;
+}
+.log-line-error { color: #f87171; /* Helleres Rot für dunklen Hintergrund */ }
+.log-line-warn { color: #facc15; /* Helleres Gelb */ }
+
+#rconInputArea {
+    padding: 15px 20px;
+    border-top: 1px solid #3e4451;
+    display: none; /* Wird per JS zu 'flex' */
+    flex-wrap: wrap; /* Erlaubt Umbruch, falls nicht genug Platz */
+    align-items: center;
+    flex-shrink: 0; /* Dieser Bereich soll nicht schrumpfen */
+}
+#rconCommandInput {
+    flex-grow: 1; /* Nimmt den meisten Platz ein */
+    min-width: 200px; /* Mindestbreite bevor der Button umbricht */
+    margin-right: 10px;
+    margin-bottom: 0; /* Kein unterer Rand, da in einer Zeile mit Button */
+    background-color: #1f2937; /* Dunkleres Feld für Kontrast */
+    color: #d1d5db;
+    border: 1px solid #4b5563;
+}
+#rconInputArea button { /* RCON Senden Button */
+    width: auto; /* Automatische Breite basierend auf Inhalt und Padding */
+    padding-left: 15px;
+    padding-right: 15px;
+    flex-shrink: 0; /* Button soll nicht schrumpfen */
+}
+#rconResponseOutput {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.85em;
+    margin-top: 10px;
+    max-height: 120px; /* Begrenzte Höhe mit Scrollbar */
+    overflow-y: auto;
+    background-color: #1f2937; /* Gleicher Hintergrund wie Input */
+    padding: 8px;
+    border-radius: 4px;
+    width: 100%; /* Volle Breite unter Input und Button */
+    white-space: pre-wrap;
+    color: #9ca3af;
+    box-sizing: border-box;
+}
+
+/* Header mit Logout */
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom:10px;
+    border-bottom: 1px solid #ddd;
+}
+.panel-header .user-info {
+    text-align: right;
+    font-size: 0.9em;
+}
+.panel-header .user-info strong {
+    color: #333;
+}
+.panel-header .user-info .button { /* Logout Button im Header */
+    background-color:#6c757d;
+    font-size:0.9em; /* Etwas kleiner */
+    padding: 5px 10px;
+    margin-top:5px;
+}
+.panel-header .user-info .button:hover {
+    background-color: #5a6268;
+}

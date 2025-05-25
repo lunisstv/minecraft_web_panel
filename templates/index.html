@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Panel</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="panel-header">
+        <h1>Minecraft Server Panel</h1>
+        {% if logged_in_user %}
+            <div class="user-info">
+                Eingeloggt als: <strong>{{ logged_in_user }}</strong><br>
+                <a href="{{ url_for('logout_route') }}" class="button">Logout</a>
+            </div>
+        {% endif %}
+        </div>
+        
+        <div class="flash-messages-container"> <!-- Container für Flash-Nachrichten -->
+             <div id="message"></div> <!-- Für JS-generierte Nachrichten -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <ul class="flash-messages">
+                    {% for category, message in messages %}
+                        <li class="{{ category }}">{{ message }}</li>
+                    {% endfor %}
+                    </ul>
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <h2>Server Instanzen</h2>
+        <div class="instance-list">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Instanzname</th>
+                        <th>Status</th>
+                        <th style="width: 250px;">Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody id="instanceTableBody">
+                    <!-- Dynamisch gefüllt -->
+                    <tr><td colspan="3" style="text-align:center; padding: 20px;">Lade Instanzen...</td></tr>
+                </tbody>
+            </table>
+            <button onclick="refreshStatuses()">Status Aktualisieren</button>
+        </div>
+
+        <h2>Neue Server-Instanz / Konfiguration</h2>
+        <form id="serverForm">
+            <label for="instance_name">Instanzname (z.B. 'survival_120'):</label>
+            <input type="text" id="instance_name" name="instance_name" value="neue_instanz" required>
+            <small>Ordner: <code>{{ default_instance_path }}/[Instanzname]</code>. Bestehende Konfiguration wird überschrieben, wenn eine Instanz mit gleichem Namen gestartet wird.</small>
+
+            <label for="server_jar">Server Version (JAR-Datei):</label>
+            <select id="server_jar" name="server_jar" required>
+                <option value="">-- Wähle JAR --</option>
+                {% for jar in server_jars %}
+                    <option value="{{ jar }}">{{ jar }}</option>
+                {% endfor %}
+            </select>
+            {% if not server_jars %}
+            <p class="warning">Keine Server-JARs in <code>{{ macros.SERVER_VERSIONS_BASE_PATH if macros else '/opt/minecraft_versions' }}</code> gefunden!</p>
+            {% endif %}
+
+            <label for="min_ram">Min. RAM (z.B. 1G, 2048M):</label>
+            <input type="text" id="min_ram" name="min_ram" value="1G">
+
+            <label for="max_ram">Max. RAM (z.B. 4G, 4096M):</label>
+            <input type="text" id="max_ram" name="max_ram" value="2G">
+
+            <label for="velocity_secret">Velocity Secret Key (optional):</label>
+            <input type="password" id="velocity_secret" name="velocity_secret" placeholder="Leer lassen, wenn nicht benötigt">
+
+            <label for="java_args">Zusätzliche Java Argumente (optional, überschreibt Aikar's Flags):</label>
+            <textarea id="java_args" name="java_args" placeholder="z.B. -XX:+UseShenandoahGC ... (Standard: Aikar's Flags)"></textarea>
+
+            <label for="server_args">Zusätzliche Server Argumente (Standard: nogui):</label>
+            <input type="text" id="server_args" name="server_args" value="nogui">
+
+            <h3>RCON Konfiguration (optional)</h3>
+            <p><small>RCON muss in der <code>server.properties</code> der Instanz aktiviert sein (<code>enable-rcon=true</code>). Das Panel versucht, die Einstellungen zu setzen, wenn Port und Passwort hier angegeben sind.</small></p>
+            <label for="rcon_port">RCON Port (Standard: {{ default_rcon_port }}):</label>
+            <input type="text" id="rcon_port" name="rcon_port" placeholder="{{ default_rcon_port }}">
+            <label for="rcon_password">RCON Passwort:</label>
+            <input type="password" id="rcon_password" name="rcon_password" placeholder="Leer lassen, um RCON nicht zu nutzen/konfigurieren">
+
+            <div>
+                <input type="checkbox" id="use_screen" name="use_screen" checked>
+                <label for="use_screen" style="display:inline; font-weight:normal;">In Screen-Session starten?</label>
+            </div>
+            <div id="screen_name_group" style="display: block;">
+                 <label for="screen_name">Screen-Name (optional, wenn oben aktiv):</label>
+                 <input type="text" id="screen_name" name="screen_name" placeholder="Standard: mc_[Instanzname]">
+            </div>
+            <br>
+            <button type="submit" id="startServerButton">Server Starten / Konfiguration Speichern</button>
+        </form>
+    </div>
+
+    <!-- Log Modal -->
+    <div id="logModal">
+        <div id="logModalContentWrapper">
+            <div id="logModalHeader">
+                <h3 id="logModalTitle">Server Logs</h3>
+                <div class="log-controls">
+                    <label for="liveLogToggle"><input type="checkbox" id="liveLogToggle">Live-Update</label>
+                    <button onclick="manualLogReload()" class="action-btn">Manuell Neu Laden</button>
+                    <button class="close-button" onclick="closeLogModal()">×</button>
+                </div>
+            </div>
+            <div id="logOutputContainer">
+                <pre id="logOutput"></pre>
+            </div>
+            <div id="rconInputArea">
+                <input type="text" id="rconCommandInput" placeholder="RCON Befehl (z.B. say Hallo)">
+                <button onclick="sendRconCommand()" class="action-btn">Senden</button>
+                <pre id="rconResponseOutput"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const serverForm = document.getElementById('serverForm');
+        const messageDiv = document.getElementById('message');
+        const instanceNameInput = document.getElementById('instance_name'); // für Formular
+        const screenNameInput = document.getElementById('screen_name');
+        const useScreenCheckbox = document.getElementById('use_screen');
+        const screenNameGroup = document.getElementById('screen_name_group');
+        const startServerButton = document.getElementById('startServerButton');
+
+        const logModal = document.getElementById('logModal');
+        const logOutputEl = document.getElementById('logOutput');
+        const logModalTitleEl = document.getElementById('logModalTitle');
+        const liveLogToggleEl = document.getElementById('liveLogToggle');
+        
+        const rconInputArea = document.getElementById('rconInputArea');
+        const rconCommandInput = document.getElementById('rconCommandInput');
+        const rconResponseOutput = document.getElementById('rconResponseOutput');
+
+        let currentLogViewInstanceName = null; // Hält den Namen der Instanz, deren Logs angezeigt werden
+        let logEventSource = null;
+        let autoScrollLogs = true;
+
+        // --- Globale Hilfsfunktionen ---
+        function displayMessage(text, type = 'info') {
+            messageDiv.textContent = text;
+            messageDiv.className = type; // 'success', 'error', 'warning', 'info'
+            messageDiv.style.display = 'block';
+            setTimeout(() => {
+                messageDiv.textContent = '';
+                messageDiv.className = '';
+                messageDiv.style.display = 'none';
+            }, 7000);
+        }
+
+        function sanitizeForScreen(name) {
+            return name.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/\./g, '_');
+        }
+
+        // --- Event Listener für Hauptformular ---
+        instanceNameInput.addEventListener('input', function() {
+            if (screenNameInput.value === '' || screenNameInput.value.startsWith('mc_')) {
+                 screenNameInput.value = `mc_${sanitizeForScreen(this.value)}`;
+            }
+        });
+
+        useScreenCheckbox.addEventListener('change', function() {
+            screenNameGroup.style.display = this.checked ? 'block' : 'none';
+        });
+        screenNameGroup.style.display = useScreenCheckbox.checked ? 'block' : 'none'; // Initial
+
+        serverForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            startServerButton.disabled = true;
+            startServerButton.textContent = "Verarbeite...";
+            const formData = new FormData(serverForm);
+            try {
+                const response = await fetch('/start_server', { method: 'POST', body: formData });
+                const result = await response.json();
+                displayMessage(result.message, result.status);
+                if (result.status === 'success') serverForm.reset();
+            } catch (error) {
+                displayMessage('Netzwerkfehler: ' + error.message, 'error');
+            } finally {
+                startServerButton.disabled = false;
+                startServerButton.textContent = "Server Starten / Konfiguration Speichern";
+                refreshStatuses();
+            }
+        });
+
+        // --- Log Modal & RCON Funktionen ---
+        function openLogModal(instanceName, isRconAvailable) {
+            currentLogViewInstanceName = instanceName; // Wichtig für RCON und manuelle Reloads
+            logModalTitleEl.textContent = `Logs für: ${instanceName}`;
+            logOutputEl.textContent = 'Lade Logs...';
+            logModal.classList.add('active');
+            liveLogToggleEl.checked = false; // Standardmäßig kein Live-Log
+
+            if (isRconAvailable) {
+                rconInputArea.style.display = 'flex'; // 'flex' für nebeneinander Anordnung
+                rconCommandInput.value = '';
+                rconResponseOutput.textContent = '';
+            } else {
+                rconInputArea.style.display = 'none';
+            }
+            fetchInstanceLogs(true, true); // isInitialLoad=true, forceSnapshot=true
+        }
+        
+        function manualLogReload() {
+            if(currentLogViewInstanceName) {
+                liveLogToggleEl.checked = false; // Live-Log ausschalten für manuellen Reload
+                fetchInstanceLogs(false, true); // kein initial load, aber force snapshot
+            }
+        }
+
+        async function fetchInstanceLogs(isInitialLoad = false, forceSnapshot = false) {
+            if (!currentLogViewInstanceName) return;
+            if (logEventSource) { logEventSource.close(); logEventSource = null; }
+
+            if (liveLogToggleEl.checked && !forceSnapshot) {
+                startLogStream(isInitialLoad);
+            } else {
+                try {
+                    const response = await fetch(`/get_logs/${currentLogViewInstanceName}?lines=500`);
+                    const data = await response.json();
+                    if (isInitialLoad || forceSnapshot) logOutputEl.innerHTML = ''; // Nur bei Initial/Force löschen
+                    if (response.ok && !data.error) {
+                        appendLogLines(data.logs);
+                    } else {
+                        appendLogLines(`Fehler beim Laden der Logs. Status: ${response.status}\n${data.logs || ''}\n`);
+                    }
+                } catch (error) {
+                    appendLogLines('Netzwerkfehler beim Abrufen der Logs: ' + error.message + '\n');
+                }
+            }
+            if (isInitialLoad || forceSnapshot) scrollToLogBottom();
+        }
+
+        function startLogStream(isInitialLoad) {
+            if (!currentLogViewInstanceName) return;
+            if (logEventSource) { logEventSource.close(); logEventSource = null; } // Schließe alten Stream
+            if (isInitialLoad) logOutputEl.innerHTML = 'Verbinde zum Log-Stream...\n';
+            
+            logEventSource = new EventSource(`/stream_logs/${currentLogViewInstanceName}`);
+            logEventSource.onmessage = function(event) {
+                const newLines = event.data.replace(/\\n/g, '\n'); // Wichtig: Escaped \n umwandeln
+                appendLogLines(newLines);
+            };
+            logEventSource.onerror = function(err) {
+                appendLogLines("\n[Log-Stream Fehler oder Verbindung geschlossen]\n");
+                console.error("EventSource failed:", err);
+                if (logEventSource) logEventSource.close();
+                liveLogToggleEl.checked = false;
+            };
+        }
+
+        function appendLogLines(logText) {
+            const lines = logText.split('\n');
+            lines.forEach((line, index) => {
+                // Verhindere, dass eine leere Zeile am Ende (durch split) als extra Zeile hinzugefügt wird,
+                // es sei denn, logText endet wirklich mit \n
+                if (index === lines.length - 1 && line === '' && !logText.endsWith('\n')) return;
+
+                const span = document.createElement('span');
+                if (line.toLowerCase().includes('[error]') || line.toLowerCase().includes(' severe ')) span.className = 'log-line-error';
+                else if (line.toLowerCase().includes('[warn]') || line.toLowerCase().includes(' warning ')) span.className = 'log-line-warn';
+                span.textContent = line + '\n';
+                logOutputEl.appendChild(span);
+            });
+            if(autoScrollLogs) scrollToLogBottom();
+        }
+
+        function scrollToLogBottom() { logOutputContainer.scrollTop = logOutputContainer.scrollHeight; }
+        logOutputContainer.addEventListener('scroll', function() {
+            autoScrollLogs = (this.scrollTop + this.clientHeight >= this.scrollHeight - 20);
+        });
+
+        liveLogToggleEl.addEventListener('change', function() {
+            fetchInstanceLogs(false, !this.checked); // Kein Initial Load, forceSnapshot wenn Checkbox aus
+        });
+
+        function closeLogModal() {
+            logModal.classList.remove('active');
+            if (logEventSource) { logEventSource.close(); logEventSource = null; }
+            currentLogViewInstanceName = null;
+            logOutputEl.innerHTML = '';
+            rconInputArea.style.display = 'none';
+        }
+
+        async function sendRconCommand() {
+            if (!currentLogViewInstanceName) return;
+            const command = rconCommandInput.value.trim();
+            if (!command) {
+                rconResponseOutput.textContent = 'Bitte Befehl eingeben.';
+                rconResponseOutput.style.color = '#facc15'; return;
+            }
+            rconResponseOutput.textContent = 'Sende...'; rconResponseOutput.style.color = '#9ca3af';
+            const formData = new FormData(); formData.append('command', command);
+            try {
+                const response = await fetch(`/send_rcon_command/${currentLogViewInstanceName}`, { method: 'POST', body: formData });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    let formattedResponse = `> ${result.command}\n< ${result.response || '(Keine Antwort vom Server)'}`;
+                    formattedResponse = formattedResponse.replace(/§[0-9a-fk-or]/g, ''); // Farbcodes entfernen
+                    rconResponseOutput.textContent = formattedResponse;
+                    rconCommandInput.value = '';
+                    appendLogLines(`[RCON] ${formattedResponse.replace(/\n/g, '\n[RCON] ')}\n`);
+                } else {
+                    rconResponseOutput.textContent = `RCON Fehler: ${result.message}`; rconResponseOutput.style.color = '#f87171';
+                }
+            } catch (error) {
+                rconResponseOutput.textContent = 'Netzwerkfehler RCON: ' + error.message; rconResponseOutput.style.color = '#f87171';
+            }
+        }
+        rconCommandInput.addEventListener('keypress', function(event) { if (event.key === 'Enter') { event.preventDefault(); sendRconCommand(); } });
+
+        // --- Instanz Aktionen (Start, Stop, Restart, Delete) ---
+        async function handleInstanceAction(action, instanceName) {
+            console.log(`handleInstanceAction: ${action}, ${instanceName}, Type: ${typeof instanceName}`); // DEBUG
+            if (typeof instanceName !== 'string' || !instanceName) {
+                displayMessage('Fehler: Ungültiger Instanzname für Aktion.', 'error');
+                console.error("Ungültiger Instanzname:", instanceName);
+                return;
+            }
+
+            const buttonId = `${action}_${instanceName}`; // Für Stop, Restart, etc.
+            const button = document.getElementById(buttonId);
+            if(button) button.disabled = true;
+
+            let endpoint = '';
+            let confirmMessage = null;
+
+            switch(action) {
+                case 'stop': endpoint = '/stop_server'; break;
+                case 'restart': endpoint = '/restart_server'; break;
+                case 'quick_start': endpoint = '/quick_start_server'; break;
+                case 'delete':
+                    endpoint = `/delete_instance/${instanceName}`; // Delete hat Name in URL
+                    confirmMessage = `Bist du SICHER, dass du die Instanz '${instanceName}' und ALLE ihre Dateien (Welt, Konfigs etc.) unwiderruflich löschen möchtest?\n\nDieser Vorgang kann NICHT rückgängig gemacht werden!`;
+                    const confirmMessage2 = `LETZTE WARNUNG: Bist du absolut sicher, dass du '${instanceName}' löschen willst?`;
+                    if (!confirm(confirmMessage) || !confirm(confirmMessage2)) {
+                        if(button) button.disabled = false; return;
+                    }
+                    break;
+                default: displayMessage('Unbekannte Aktion', 'error'); if(button) button.disabled = false; return;
+            }
+
+            displayMessage(`Aktion '${action}' für '${instanceName}' wird ausgeführt...`, 'info');
+            const formData = new FormData();
+            if (action !== 'delete') formData.append('instance_name', instanceName); // Delete hat Name in URL
+
+            try {
+                const response = await fetch(endpoint, { method: 'POST', body: (action !== 'delete' ? formData : null) });
+                const result = await response.json();
+                displayMessage(result.message, result.status);
+            } catch (error) {
+                displayMessage(`Netzwerkfehler bei Aktion '${action}': ${error.message}`, 'error');
+            } finally {
+                if(button && action !== 'delete') { // Löschen-Button ist weg nach Refresh
+                    button.disabled = false;
+                }
+                refreshStatuses();
+            }
+        }
+
+        // --- Status Aktualisierung der Tabelle ---
+        async function refreshStatuses() {
+            try {
+                const response = await fetch('/server_status');
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const statuses = await response.json();
+                updateInstanceTable(statuses);
+            } catch (error) {
+                console.error("Fehler beim Abrufen des Serverstatus:", error);
+                const tableBody = document.getElementById('instanceTableBody');
+                if (!tableBody.querySelector('tr[data-instance-name]')) { // Nur Fehler anzeigen, wenn Tabelle wirklich leer ist
+                    tableBody.innerHTML = `<tr><td colspan="3" class="error" style="text-align:center;">Fehler beim Laden der Status: ${error.message}</td></tr>`;
+                } else { displayMessage(`Status-Update fehlgeschlagen: ${error.message}`, 'warning'); }
+            }
+        }
+
+        function updateInstanceTable(statuses) {
+            const tableBody = document.getElementById('instanceTableBody');
+            const existingRowElements = new Map();
+            tableBody.querySelectorAll('tr[data-instance-name]').forEach(row => {
+                existingRowElements.set(row.dataset.instanceName, row);
+            });
+            const currentInstanceNamesInStatus = new Set(Object.keys(statuses));
+
+            if (Object.keys(statuses).length === 0 && !tableBody.querySelector('tr[data-instance-name]')) {
+                 tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding: 20px;">Keine Instanzen konfiguriert oder gefunden.</td></tr>`;
+                 return;
+            }
+            // Entferne Fehlerzeile, falls vorhanden und Status erfolgreich geladen
+            const errorRow = tableBody.querySelector('tr:not([data-instance-name])'); // Einfacher Selektor für Nicht-Daten-Zeilen
+            if (errorRow && Object.keys(statuses).length > 0) errorRow.remove();
+
+
+            for (const instanceNameStr in statuses) { // instanceNameStr ist hier der String-Schlüssel
+                const data = statuses[instanceNameStr];
+                let row = existingRowElements.get(instanceNameStr);
+
+                if (!row) {
+                    row = tableBody.insertRow(); row.dataset.instanceName = instanceNameStr;
+                    row.insertCell().textContent = instanceNameStr;
+                    row.insertCell().className = 'status-cell';
+                    row.insertCell().className = 'actions-cell';
+                    existingRowElements.set(instanceNameStr, row); // Füge neue Zeile zur Map hinzu
+                }
+                row.cells[1].textContent = data.status_text;
+                const actionCell = row.cells[2]; actionCell.innerHTML = ''; // Alte Buttons entfernen
+
+                if (data.is_running_managed) {
+                    actionCell.innerHTML += `<button id="stop_${instanceNameStr}" class="action-btn stop" onclick="handleInstanceAction('stop', '${instanceNameStr}')">Stop</button> `;
+                    actionCell.innerHTML += `<button id="restart_${instanceNameStr}" class="action-btn restart" onclick="handleInstanceAction('restart', '${instanceNameStr}')">Neustart</button> `;
+                } else if (data.has_config) {
+                    actionCell.innerHTML += `<button id="quick_start_${instanceNameStr}" class="action-btn" onclick="handleInstanceAction('quick_start', '${instanceNameStr}')">Schnellstart</button> `;
+                }
+                if (data.log_exists) {
+                    actionCell.innerHTML += `<button class="action-btn logs" onclick="openLogModal('${instanceNameStr}', ${data.rcon_available})">Logs</button> `;
+                }
+                actionCell.innerHTML += `<button id="delete_${instanceNameStr}" class="action-btn delete" onclick="handleInstanceAction('delete', '${instanceNameStr}')">Löschen</button>`;
+            }
+            // Zeilen für nicht mehr existierende Instanz-Ordner entfernen
+            existingRowElements.forEach((row, name) => {
+                if (!currentInstanceNamesInStatus.has(name)) row.remove();
+            });
+        }
+
+        // --- Initialisierung ---
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshStatuses();
+            setInterval(refreshStatuses, 10000); // Alle 10 Sekunden
+        });
+        window.addEventListener('click', function(event) { if (event.target == logModal) closeLogModal(); });
+
+    </script>
+</body>
+</html>
