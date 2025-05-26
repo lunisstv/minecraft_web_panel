@@ -8,9 +8,11 @@
     <table>
         <thead>
             <tr>
-                <th>Server Name</th>
+                <th>Name</th>
                 <th>Port</th>
                 <th>RAM (Min/Max)</th>
+                <th>CPU (%)</th> <!-- NEU -->
+                <th>RAM (MB)</th> <!-- NEU -->
                 <th>Source JAR</th>
                 <th>Status</th>
                 <th>Aktionen</th>
@@ -18,13 +20,15 @@
         </thead>
         <tbody>
             {% for name, info in servers.items() %}
-            <tr>
+            <tr data-server-name="{{ name }}"> {# data Attribut für JS Selektion #}
                 <td>{{ name }}</td>
                 <td>{{ info.port }}</td>
                 <td>{{ info.ram_min }} / {{ info.ram_max }}</td>
+                <td class="cpu-usage">N/A</td> {# Platzhalter #}
+                <td class="ram-usage">N/A</td> {# Platzhalter #}
                 <td>{{ info.jar if info.jar else 'server.jar' }}</td>
                 <td>
-                    <span id="status-{{ name }}">{{ info.status }}</span>
+                    <span id="status-{{ name }}" class="status-text">{{ info.status }}</span>
                 </td>
                 <td class="actions">
                     {% if info.status == 'stopped' %}
@@ -48,4 +52,89 @@
     {% else %}
     <p>Keine Server konfiguriert. <a href="{{ url_for('server.create_server_route') }}">Erstelle jetzt einen!</a></p>
     {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const serverRows = document.querySelectorAll('table tbody tr[data-server-name]');
+    let resourceUpdateInterval;
+
+    function updateResourceUsage(serverName, row) {
+        const statusElement = row.querySelector('.status-text');
+        if (!statusElement || statusElement.textContent.toLowerCase() !== 'running') {
+            // Wenn Server nicht läuft, N/A setzen und nicht abfragen
+            row.querySelector('.cpu-usage').textContent = '0';
+            row.querySelector('.ram-usage').textContent = '0';
+            return;
+        }
+
+        const resourceUrl = `{{ url_for('server.resource_usage_route', server_name='SERVER_NAME_PLACEHOLDER') }}`.replace('SERVER_NAME_PLACEHOLDER', serverName);
+        
+        fetch(resourceUrl)
+            .then(response => {
+                if (!response.ok) {
+                    // Bei Fehler (z.B. Server gerade gestoppt, aber noch als running gelistet) N/A anzeigen
+                    row.querySelector('.cpu-usage').textContent = 'Fehler';
+                    row.querySelector('.ram-usage').textContent = 'Fehler';
+                    console.error(`Error fetching resources for ${serverName}: ${response.status}`);
+                    return null; // Verhindert weiteren Fehler bei response.json()
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data && !data.error) {
+                    row.querySelector('.cpu-usage').textContent = data.cpu_usage !== 'N/A' ? parseFloat(data.cpu_usage).toFixed(1) : 'N/A';
+                    row.querySelector('.ram-usage').textContent = data.ram_usage_rss_mb !== 'N/A' ? parseFloat(data.ram_usage_rss_mb).toFixed(1) : 'N/A';
+                    if (data.status && statusElement.textContent.toLowerCase() !== data.status.toLowerCase()) {
+                        statusElement.textContent = data.status; // Status aktualisieren falls Server gestoppt wurde
+                         // Hier könnte man auch die Start/Stop Buttons anpassen
+                    }
+                } else if (data && data.error) {
+                     row.querySelector('.cpu-usage').textContent = 'Fehler';
+                     row.querySelector('.ram-usage').textContent = 'Fehler';
+                     console.warn(`API error for ${serverName}: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error(`Fetch error for ${serverName}:`, error);
+                row.querySelector('.cpu-usage').textContent = 'N/A';
+                row.querySelector('.ram-usage').textContent = 'N/A';
+            });
+    }
+
+    function updateAllServerResources() {
+        serverRows.forEach(row => {
+            const serverName = row.dataset.serverName;
+            if (serverName) {
+                updateResourceUsage(serverName, row);
+            }
+        });
+    }
+
+    // Initialer Aufruf und dann periodisch
+    if (serverRows.length > 0) {
+        updateAllServerResources(); // Sofort beim Laden
+        resourceUpdateInterval = setInterval(updateAllServerResources, 5000); // Alle 5 Sekunden
+    }
+
+    // Aufräumen, wenn die Seite verlassen wird
+    window.addEventListener('beforeunload', () => {
+        if (resourceUpdateInterval) {
+            clearInterval(resourceUpdateInterval);
+        }
+    });
+     // Auch bei Sichtbarkeitsänderung, um unnötige Abfragen zu stoppen
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            if (resourceUpdateInterval) clearInterval(resourceUpdateInterval);
+        } else {
+            if (serverRows.length > 0) { // Nur starten wenn Server vorhanden
+                updateAllServerResources(); // Sofort aktualisieren
+                resourceUpdateInterval = setInterval(updateAllServerResources, 5000);
+            }
+        }
+    });
+});
+</script>
 {% endblock %}

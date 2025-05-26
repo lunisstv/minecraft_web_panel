@@ -30,9 +30,9 @@ ehthumbs.db
 Thumbs.db
 
 # Server data (if you want to keep the base panel clean)
-# servers/
-# server_jars/
-# servers.json # Be careful if you version control this, it might contain server states
+servers/
+server_jars/
+servers.json # Be careful if you version control this, it might contain server states
 
 # Log files
 *.log

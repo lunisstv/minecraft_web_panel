@@ -8,7 +8,7 @@ main_bp = Blueprint('main', __name__) # url_prefix ist standardmäßig '/'
 @login_required # Schütze diese Route
 def index():
     # server_manager ist global in mc_panel/__init__.py verfügbar
-    servers = server_manager.get_all_servers()
+    servers = server_manager.get_all_servers_with_resources()
     return render_template('index.html', servers=servers)
 
 @main_bp.route('/server_console/<server_name>')
@@ -26,7 +26,7 @@ def server_console(server_name):
 @login_required
 def get_console_output(server_name):
     # Auch hier: server_name validieren oder sicherstellen, dass Manager es tut.
-    output = server_manager.get_console_output(server_name)
+    output = server_manager.get_console_output_with_resources(server_name)
     return jsonify(output)
 
 # Eine einfache Route, um zu sehen, ob die App läuft (optional, ohne Login)

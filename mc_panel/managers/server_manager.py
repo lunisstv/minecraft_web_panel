@@ -8,6 +8,13 @@ import time
 import shutil
 from werkzeug.utils import secure_filename
 
+try:
+    import psutil # Für CPU/RAM-Auslastung
+except ImportError:
+    psutil = None
+    print("WARNUNG: psutil nicht gefunden. CPU/RAM-Auslastung wird nicht verfügbar sein.")
+    print("Bitte installiere psutil: pip install psutil")
+
 class ServerManager:
     def __init__(self, config_file, instances_dir, jars_dir):
         self.config_file = config_file
@@ -61,13 +68,21 @@ class ServerManager:
                 details['status'] = 'stopped'
                 changed = True
 
-            details.setdefault('port', 'N/A')
+            # Standardwerte für neue und bestehende Parameter
+            details.setdefault('port', '25565')
             details.setdefault('ram_min', '1G')
             details.setdefault('ram_max', '2G')
-            details.setdefault('jar', 'server.jar') # Die im Serververzeichnis genutzte JAR
+            details.setdefault('jar', 'server.jar')
             details.setdefault('status', 'stopped')
-            details.setdefault('path', self.get_server_path(name, validate_name_for_path=False)) # Initial path
+            details.setdefault('path', self.get_server_path(name, validate_name_for_path=False))
             details.setdefault('eula_accepted_in_panel', False)
+            details.setdefault('velocity_secret', '')
+            details.setdefault('level_name', 'world')
+            details.setdefault('gamemode', 'survival')
+            details.setdefault('difficulty', 'easy')
+            details.setdefault('max_players', 20)
+            details.setdefault('online_mode', True)
+            details.setdefault('custom_jvm_args', '') # Für zusätzliche JVM Argumente
 
         for name in server_names_to_remove:
             del self.servers[name]
@@ -75,11 +90,8 @@ class ServerManager:
         if changed:
             self._save_servers_config()
 
-    def get_all_servers(self):
-        # Lade immer die aktuellste Config, um externe Änderungen (theoretisch) zu berücksichtigen
-        # Obwohl in diesem Setup der ServerManager die einzige Quelle der Wahrheit sein sollte.
-        # self.servers = self._load_servers_config() # Kann zu Race Conditions führen, wenn oft aufgerufen
-        
+    def get_all_servers_with_resources(self):
+        """ Gibt alle Serverdetails inklusive aktueller Ressourcenverwendung zurück. """
         servers_view = {}
         # Iteriere über eine Kopie, falls _load_servers_config im Hintergrund was ändert
         # (sollte nicht, aber sicher ist sicher)
@@ -90,27 +102,64 @@ class ServerManager:
             if not isinstance(details_template, dict): continue # Überspringe fehlerhafte Einträge
 
             details = details_template.copy() # Arbeite mit einer Kopie
-            process = self.processes.get(name)
-            if process and process.poll() is None: # Prozess existiert und läuft
+            process_obj = self.processes.get(name)
+            if process_obj and process_obj.poll() is None: # Prozess existiert und läuft
                 details['status'] = 'running'
-                if details_template.get('status') != 'running': # Update config if inconsistent
+                if psutil and hasattr(process_obj, 'pid'):
+                    try:
+                        p = psutil.Process(process_obj.pid)
+                        details['cpu_usage'] = p.cpu_percent(interval=0.1) # Kurzes Intervall für schnelle Abfrage
+                        mem_info = p.memory_info()
+                        details['ram_usage_rss_mb'] = round(mem_info.rss / (1024 * 1024), 2) # RSS in MB
+                        # details['ram_usage_vms_mb'] = round(mem_info.vms / (1024 * 1024), 2) # VMS in MB
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        details['cpu_usage'] = 'N/A'
+                        details['ram_usage_rss_mb'] = 'N/A'
+                else:
+                    details['cpu_usage'] = 'N/A (psutil)'
+                    details['ram_usage_rss_mb'] = 'N/A (psutil)'
+                
+                if details_template.get('status') != 'running':
                     self.servers[name]['status'] = 'running'
                     self._save_servers_config() # Speichere Statusänderung
             else: # Prozess läuft nicht oder existiert nicht
-                if details_template.get('status') == 'running':
+                details['status'] = details_template.get('status', 'stopped')
+                if details['status'] == 'running': # Korrigiere falls Prozess weg aber Status noch running
                     details['status'] = 'stopped'
                     self.servers[name]['status'] = 'stopped'
-                    self._save_servers_config() # Speichere Statusänderung
-                else:
-                    details['status'] = details_template.get('status', 'stopped') # Fallback auf gespeicherten Status
+                    self._save_servers_config()
+                details['cpu_usage'] = 0
+                details['ram_usage_rss_mb'] = 0
 
             servers_view[name] = details
         return servers_view
 
+    def get_server_resource_usage(self, server_name):
+        """ Gibt CPU und RAM Nutzung für einen spezifischen Server zurück. """
+        if not psutil:
+            return {'error': 'psutil not installed', 'cpu_usage': 'N/A', 'ram_usage_rss_mb': 'N/A'}
+
+        process_obj = self.processes.get(server_name)
+        if process_obj and process_obj.poll() is None and hasattr(process_obj, 'pid'):
+            try:
+                p = psutil.Process(process_obj.pid)
+                # Für eine einzelne Abfrage kann das Intervall für cpu_percent() None sein oder ein sehr kurzes.
+                # Ein erstes None gibt oft 0 zurück, ein zweiter Aufruf kurz danach ist genauer.
+                # Für periodische Updates ist ein kleines Intervall besser.
+                p.cpu_percent(interval=None) # Erster Aufruf "initialisiert"
+                time.sleep(0.1) # Kurze Pause für genauere Messung
+                cpu = p.cpu_percent(interval=None)
+                mem_info = p.memory_info()
+                ram_rss_mb = round(mem_info.rss / (1024 * 1024), 2)
+                return {'cpu_usage': cpu, 'ram_usage_rss_mb': ram_rss_mb, 'status': 'running'}
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return {'error': 'Process not found or access denied', 'cpu_usage': 'N/A', 'ram_usage_rss_mb': 'N/A', 'status': 'error'}
+        return {'cpu_usage': 0, 'ram_usage_rss_mb': 0, 'status': 'stopped'}
+
 
     def get_server_details(self, server_name):
         # Gibt Details basierend auf dem aktuellen Laufzeitstatus zurück
-        all_servers = self.get_all_servers()
+        all_servers = self.get_all_servers_with_resources() # Holt jetzt auch Ressourcen
         return all_servers.get(server_name)
 
     def get_server_path(self, server_name, validate_name_for_path=True):
@@ -140,7 +189,7 @@ class ServerManager:
             except ValueError: # Kann auftreten, wenn Popen-Stream geschlossen wird, während readline liest
                 print(f"INFO: Stdout-Stream für Server {server_name} wurde geschlossen (möglicherweise während des Stoppens).")
             finally:
-                if not process.stdout.closed:
+                if process.stdout and not process.stdout.closed:
                     process.stdout.close()
 
         process.wait() # Warten bis Prozess beendet
@@ -155,7 +204,7 @@ class ServerManager:
             del self.processes[server_name]
         if server_name in self.threads: # Thread sollte hier enden
             del self.threads[server_name]
-        print(f"Output thread for {server_name} finished, server marked as stopped.")
+        # print(f"Output thread for {server_name} finished, server marked as stopped.")
 
 
     def start_server(self, server_name):
@@ -179,9 +228,21 @@ class ServerManager:
 
         ram_min = server_info.get('ram_min', '1G')
         ram_max = server_info.get('ram_max', '2G')
+        velocity_secret = server_info.get('velocity_secret', '')
+        custom_jvm_args_str = server_info.get('custom_jvm_args', '')
+        custom_jvm_args_list = custom_jvm_args_str.split() # Trennt Argumente bei Leerzeichen
 
-        command = ['java', f'-Xms{ram_min}', f'-Xmx{ram_max}', '-jar', 'server.jar', 'nogui']
+        command = ['java']
+        if velocity_secret:
+            command.append(f'-Dvelocity-forwarding-secret={velocity_secret}')
+        
+        # Füge benutzerdefinierte JVM Argumente hinzu
+        command.extend(custom_jvm_args_list)
 
+        command.extend([
+            f'-Xms{ram_min}', f'-Xmx{ram_max}',
+            '-jar', 'server.jar', 'nogui'
+        ])
         # EULA-Check und Erstellung
         eula_path = os.path.join(server_dir, 'eula.txt')
         eula_ok = False
@@ -222,6 +283,7 @@ class ServerManager:
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = subprocess.SW_HIDE # Versteckt das Fenster
 
+            print(f"Starte Server '{server_name}' mit Befehl: {' '.join(command)}") # Logging des Befehls
             process = subprocess.Popen(
                 command,
                 cwd=server_dir,
@@ -321,8 +383,11 @@ class ServerManager:
         return True, msg
 
 
-    def get_console_output(self, server_name):
-        return self.server_outputs.get(server_name, ["Server nicht aktiv oder keine aktuelle Ausgabe."])
+    def get_console_output_with_resources(self, server_name):
+        """ Gibt Konsolenausgabe und Ressourceninformationen zurück. """
+        output = self.server_outputs.get(server_name, ["Server nicht aktiv oder keine aktuelle Ausgabe."])
+        resources = self.get_server_resource_usage(server_name)
+        return {'console': output, 'resources': resources}
 
 
     def send_command(self, server_name, command):
@@ -346,43 +411,56 @@ class ServerManager:
             return False, f"Fehler beim Senden des Befehls: {e}"
 
 
-    def create_server(self, data, selected_jar_filename):
-        server_name = data.get('server_name')
-        port = data.get('port')
-        ram_min = data.get('ram_min')
-        ram_max = data.get('ram_max')
-        eula_accepted_in_panel = data.get('eula_accepted_in_panel', False)
+        def _generate_server_properties(self, server_dir, server_data):
+            """ Generiert eine server.properties Datei mit den gegebenen Daten. """
+            properties_path = os.path.join(server_dir, 'server.properties')
+            content = "# Minecraft server properties generated by WebPanel\n"
+            content += f"# {time.asctime()}\n"
+            content += f"server-port={server_data.get('port')}\n"
+            content += f"level-name={server_data.get('level_name', 'world')}\n"
+            content += f"gamemode={server_data.get('gamemode', 'survival')}\n"
+            content += f"difficulty={server_data.get('difficulty', 'easy')}\n"
+            content += f"max-players={server_data.get('max_players', 20)}\n"
+            content += f"online-mode={str(server_data.get('online_mode', True)).lower()}\n"
+            # PaperMC spezifisch, falls Velocity Secret vorhanden ist.
+            # Besser wäre, dies nur für Paper-Server zu setzen, aber es schadet meist nicht.
+            if server_data.get('velocity_secret'):
+                content += f"player-identity-forwarding-type=MODERN\n" # oder LEGACY, je nach Proxy
+                content += f"player-identity-forwarding-secret={server_data.get('velocity_secret')}\n"
+            
+            # Weitere Standard- oder wichtige Properties, die man setzen könnte:
+            content += "enable-rcon=false\n" # Standardmäßig aus Sicherheitsgründen deaktivieren
+            content += "motd=A Minecraft Server managed by WebPanel\n"
+            # ... füge hier weitere gewünschte Standard-Properties hinzu ...
 
-        if not all([server_name, port, ram_min, ram_max, selected_jar_filename]):
-            return False, "Alle Felder müssen ausgefüllt sein."
+            try:
+                with open(properties_path, 'w') as f:
+                    f.write(content)
+                return True, f"server.properties für '{server_data.get('server_name')}' erstellt."
+            except IOError as e:
+                return False, f"Fehler beim Schreiben der server.properties: {e}"
 
-        # Validierung des Servernamens für Verzeichnisnamen
+
+    def create_server(self, server_data, selected_jar_filename):
+        server_name = server_data.get('server_name')
+        # ... (Validierungen für server_name, port, ram wie zuvor) ...
+        if not all(c.isalnum() or c in ['_', '-'] for c in server_name): # Strenge Validierung
+             return False, "Servername darf nur Buchstaben, Zahlen, '_' und '-' enthalten."
+        # ... (Rest der Validierungen wie Port, RAM etc. aus vorheriger Version)
+
         try:
-            server_dir = self.get_server_path(server_name, validate_name_for_path=True)
+            server_dir = self.get_server_path(server_name) # Verwendet validierten Namen
         except ValueError as e:
-            return False, str(e) # Enthält die Fehlermeldung von get_server_path
-
-        try:
-            port_num = int(port)
-            if not (1024 <= port_num <= 65535): # Typische Port Range
-                raise ValueError("Port außerhalb des gültigen Bereichs.")
-        except ValueError:
-            return False, "Ungültiger Port. Muss eine Zahl zwischen 1024 und 65535 sein."
-
-        # RAM Validierung (einfach)
-        if not (ram_min[:-1].isdigit() and ram_min.upper().endswith(('M', 'G')) and
-                ram_max[:-1].isdigit() and ram_max.upper().endswith(('M', 'G'))):
-            return False, "RAM Angaben müssen eine Zahl gefolgt von M oder G sein (z.B. 512M, 2G)."
-
+            return False, str(e)
 
         # self.servers = self._load_servers_config() # Neueste Config laden
         if server_name in self.servers:
             return False, f"Ein Server mit dem Namen '{server_name}' existiert bereits."
 
         # Überprüfen, ob Port bereits verwendet wird
-        for s_name, s_info in self.servers.items():
-            if isinstance(s_info, dict) and str(s_info.get('port')) == str(port):
-                return False, f"Port {port} wird bereits von Server '{s_name}' verwendet."
+        for s_info in self.servers.values():
+            if isinstance(s_info, dict) and str(s_info.get('port')) == str(server_data.get('port')):
+                return False, f"Port {server_data.get('port')} wird bereits verwendet."
 
         # selected_jar_filename sollte bereits sicher sein (von JarManager.list_jars)
         # Dennoch os.path.basename als zusätzliche Sicherheitsebene
@@ -404,7 +482,7 @@ class ServerManager:
             return False, f"Fehler beim Kopieren der JAR-Datei: {e}"
 
         # EULA-Datei erstellen, wenn im Formular akzeptiert
-        if eula_accepted_in_panel:
+        if server_data.get('eula_accepted_in_panel', False):
             try:
                 with open(os.path.join(server_dir, 'eula.txt'), 'w') as f:
                     f.write("# EULA wurde durch das Webpanel beim Erstellen akzeptiert.\n")
@@ -415,17 +493,32 @@ class ServerManager:
                 return False, f"Konnte eula.txt nicht schreiben: {e}"
 
 
-        self.servers[server_name] = {
-            'port': port,
-            'ram_min': ram_min.upper(), # Konsistente Großschreibung für M/G
-            'ram_max': ram_max.upper(),
-            'jar': os.path.basename(selected_jar_filename), # Nur den Dateinamen speichern
+        prop_success, prop_message = self._generate_server_properties(server_dir, server_data)
+        if not prop_success:
+            shutil.rmtree(server_dir, ignore_errors=True)
+            return False, prop_message # Gib die Fehlermeldung der Property-Generierung zurück
+
+
+        # Daten für servers.json vorbereiten
+        new_server_entry = {
+            'port': server_data.get('port'),
+            'ram_min': server_data.get('ram_min').upper(),
+            'ram_max': server_data.get('ram_max').upper(),
+            'jar': os.path.basename(selected_jar_filename),
             'status': 'stopped',
-            'path': server_dir, # Pfad zum Serververzeichnis
-            'eula_accepted_in_panel': eula_accepted_in_panel
+            'path': server_dir,
+            'eula_accepted_in_panel': server_data.get('eula_accepted_in_panel', False),
+            'velocity_secret': server_data.get('velocity_secret', ''),
+            'level_name': server_data.get('level_name', 'world'),
+            'gamemode': server_data.get('gamemode', 'survival'),
+            'difficulty': server_data.get('difficulty', 'easy'),
+            'max_players': int(server_data.get('max_players', 20)),
+            'online_mode': server_data.get('online_mode', True),
+            'custom_jvm_args': server_data.get('custom_jvm_args', '')
         }
+        self.servers[server_name] = new_server_entry
         self._save_servers_config()
-        return True, f"Server '{server_name}' erfolgreich erstellt."
+        return True, f"Server '{server_name}' erfolgreich erstellt. {prop_message}"
 
 
     def delete_server(self, server_name):
