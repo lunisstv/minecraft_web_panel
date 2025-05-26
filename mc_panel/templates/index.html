@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Serverübersicht - Minecraft Web Panel{% endblock %}
+
+{% block content %}
+    <h1>Minecraft Server Panel</h1>
+    {% if servers %}
+    <table>
+        <thead>
+            <tr>
+                <th>Server Name</th>
+                <th>Port</th>
+                <th>RAM (Min/Max)</th>
+                <th>Source JAR</th>
+                <th>Status</th>
+                <th>Aktionen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for name, info in servers.items() %}
+            <tr>
+                <td>{{ name }}</td>
+                <td>{{ info.port }}</td>
+                <td>{{ info.ram_min }} / {{ info.ram_max }}</td>
+                <td>{{ info.jar if info.jar else 'server.jar' }}</td>
+                <td>
+                    <span id="status-{{ name }}">{{ info.status }}</span>
+                </td>
+                <td class="actions">
+                    {% if info.status == 'stopped' %}
+                    <form action="{{ url_for('server.start_server_route', server_name=name) }}" method="POST">
+                        <button type="submit" class="start">Start</button>
+                    </form>
+                    {% else %}
+                    <form action="{{ url_for('server.stop_server_route', server_name=name) }}" method="POST">
+                        <button type="submit" class="stop">Stop</button>
+                    </form>
+                    {% endif %}
+                    <a href="{{ url_for('main.server_console', server_name=name) }}" class="button-link console">Konsole</a>
+                    <form action="{{ url_for('server.delete_server_route', server_name=name) }}" method="POST" onsubmit="return confirm('Sicher, dass du den Server {{ name }} und alle seine Daten unwiderruflich löschen möchtest?');">
+                        <button type="submit" class="delete">Löschen</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>Keine Server konfiguriert. <a href="{{ url_for('server.create_server_route') }}">Erstelle jetzt einen!</a></p>
+    {% endif %}
+{% endblock %}

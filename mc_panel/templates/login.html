@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Anmelden - Minecraft Web Panel{% endblock %}
+{% block content %}
+    <div class="login-container"> {# <--- Diese Klasse hinzufügen #}
+        <h2>Anmelden</h2>
+        <form method="POST" action="{{ url_for('auth.login', next=request.args.get('next')) }}">
+            <div>
+                <label for="username">Benutzername:</label>
+                <input type="text" id="username" name="username" required autofocus>
+            </div>
+            <div>
+                <label for="password">Passwort:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <div>
+                <input type="submit" value="Anmelden" class="button primary" style="width: 100%;">
+            </div>
+        </form>
+    </div>
+{% endblock %}

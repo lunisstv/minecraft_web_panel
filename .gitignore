@@ -1,3 +1,38 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Instance folder (sensitive configuration)
+instance/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+VENV/
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Server data (if you want to keep the base panel clean)
+# servers/
+# server_jars/
+# servers.json # Be careful if you version control this, it might contain server states
+
+# Log files
+*.log

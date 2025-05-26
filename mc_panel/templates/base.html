@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Minecraft Web Panel{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav>
+        <ul>
+            {% if session.user_id %}
+                <li><a href="{{ url_for('main.index') }}" class="{{ 'active' if request.endpoint == 'main.index' else '' }}">Serverübersicht</a></li>
+                <li><a href="{{ url_for('jar.manage_jars_route') }}" class="{{ 'active' if request.endpoint == 'jar.manage_jars_route' else '' }}">JARs Verwalten</a></li>
+                <li><a href="{{ url_for('server.create_server_route') }}" class="{{ 'active' if request.endpoint == 'server.create_server_route' else '' }}">Server Erstellen</a></li>
+            {% endif %}
+        </ul>
+        <div class="auth-links">
+            {% if session.user_id %}
+                <span>Angemeldet als: <strong>{{ session.user_id }}</strong></span>
+                <a href="{{ url_for('auth.logout') }}">Abmelden</a>
+            {% else %}
+                <a href="{{ url_for('auth.login') }}">Anmelden</a>
+            {% endif %}
+        </div>
+    </nav>
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

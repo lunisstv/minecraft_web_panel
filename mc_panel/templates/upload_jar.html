@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}JARs Verwalten - Minecraft Web Panel{% endblock %}
+
+{% block content %}
+    <h1>JAR-Dateien Verwalten</h1>
+    
+    <h2>JAR-Datei Hochladen</h2>
+    <form method="POST" action="{{ url_for('jar.manage_jars_route') }}" enctype="multipart/form-data">
+        <div>
+            <label for="jar_file">JAR-Datei auswählen (.jar):</label>
+            <input type="file" name="jar_file" id="jar_file" accept=".jar" required>
+        </div>
+        <div>
+            <input type="submit" value="Hochladen" class="button primary">
+        </div>
+    </form>
+
+    <h2>Verfügbare JAR-Dateien</h2>
+    {% if available_jars %}
+        <ul class="jar-list">
+            {% for jar in available_jars %}
+            <li>
+                <span>{{ jar }}</span>
+                <form action="{{ url_for('jar.delete_jar_route', jar_name=jar) }}" method="POST" onsubmit="return confirm('Sicher, dass du die JAR-Datei \'{{ jar }}\' löschen möchtest? Dies könnte Server beeinträchtigen, die diese JAR als Quelle für ihre server.jar genutzt haben, falls diese nicht mehr existiert oder beschädigt wird.');">
+                    <button type="submit" class="delete">Löschen</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>Keine JAR-Dateien im Verzeichnis <code>{{ panel_config.SERVER_JARS_DIR }}</code> gefunden.</p>
+    {% endif %}
+{% endblock %}

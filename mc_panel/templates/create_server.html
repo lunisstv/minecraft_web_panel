@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Server Erstellen - Minecraft Web Panel{% endblock %}
+
+{% block content %}
+    <h1>Neuen Minecraft Server Erstellen</h1>
+    {% if not available_jars %}
+        <p style="color: red; font-weight: bold;">
+            Achtung: Keine JAR-Dateien verfügbar. Bitte lade zuerst eine JAR-Datei unter
+            <a href="{{ url_for('jar.manage_jars_route') }}">JARs Verwalten</a>
+        </p>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('server.create_server_route') }}">
+        <div>
+            <label for="server_name">Servername:</label>
+            <input type="text" id="server_name" name="server_name" value="{{ form_data.server_name or '' }}" required pattern="[a-zA-Z0-9_-]+" title="Nur Buchstaben, Zahlen, Unterstrich und Bindestrich erlaubt.">
+            <small>Wird auch als Verzeichnisname verwendet. Keine Leerzeichen oder andere Sonderzeichen.</small>
+        </div>
+
+        <div>
+            <label for="port">Port:</label>
+            <input type="number" id="port" name="port" min="1024" max="65535" value="{{ form_data.port or '25565' }}" required>
+        </div>
+
+        <div>
+            <label for="ram_min">Minimaler RAM:</label>
+            <input type="text" id="ram_min" name="ram_min" value="{{ form_data.ram_min or '1G' }}" required placeholder="z.B. 512M oder 1G">
+            <small>Mit M für Megabytes oder G für Gigabytes (z.B. 1024M, 2G).</small>
+        </div>
+        
+        <div>
+            <label for="ram_max">Maximaler RAM:</label>
+            <input type="text" id="ram_max" name="ram_max" value="{{ form_data.ram_max or '2G' }}" required placeholder="z.B. 1G oder 2G">
+            <small>Mit M für Megabytes oder G für Gigabytes (z.B. 1024M, 2G).</small>
+        </div>
+
+        <div>
+            <label for="selected_jar">Server JAR-Datei:</label>
+            <select id="selected_jar" name="selected_jar" {% if not available_jars %}disabled{% endif %} required>
+                <option value="">-- JAR auswählen --</option>
+                {% for jar in available_jars %}
+                <option value="{{ jar }}" {% if form_data.selected_jar == jar %}selected{% endif %}>{{ jar }}</option>
+                {% endfor %}
+            </select>
+             {% if not available_jars %}
+                <small style="color:red;">Keine JARs hochgeladen. <a href="{{ url_for('jar.manage_jars_route') }}">Jetzt hochladen</a>.</small>
+            {% endif %}
+        </div>
+
+        <div>
+            <label for="eula">
+                <input type="checkbox" id="eula" name="eula" value="true" {% if form_data.eula or not form_data %}checked{% endif %}> <!-- Default checked -->
+                Ich akzeptiere die Minecraft EULA (eula=true wird in eula.txt gesetzt).
+            </label>
+        </div>
+        
+        <p><strong>Hinweis:</strong> Weitere Servereinstellungen (wie <code>server.properties</code>) können nach der Erstellung des Servers und dem ersten Start manuell im Serververzeichnis (<code>servers/SERVERNAME/server.properties</code>) angepasst werden.</p>
+
+        <div>
+            <input type="submit" value="Server Erstellen" class="button primary" {% if not available_jars %}disabled title="Bitte zuerst eine JAR hochladen."{% endif %}>
+        </div>
+    </form>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Konsole: {{ server_name }} - Minecraft Web Panel{% endblock %}
+
+{% block content %}
+    <h1>Konsole für Server: {{ server_name }}</h1>
+    <p>Status: <strong id="server-status-dynamic">{{ server_info.status }}</strong> | Port: {{ server_info.port }} | RAM: {{ server_info.ram_min }}/{{ server_info.ram_max }}</p>
+
+    <div id="console-output">
+        Lade Konsolenausgabe...
+    </div>
+
+    <form id="command-form" style="margin-top: 15px;">
+        <input type="text" id="command-input" name="command" placeholder="Befehl eingeben..." autocomplete="off">
+        <button type="submit" class="button console">Senden</button>
+    </form>
+    <p style="margin-top: 20px;"><a href="{{ url_for('main.index') }}" class="button">« Zurück zur Serverübersicht</a></p>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const consoleOutputDiv = document.getElementById('console-output');
+        const commandForm = document.getElementById('command-form');
+        const commandInput = document.getElementById('command-input');
+        const serverName = "{{ server_name }}";
+        let autoScroll = true;
+        let intervalId = null;
+
+        const getConsoleOutputUrl = "{{ url_for('main.get_console_output', server_name=server_name) }}";
+        const sendCommandUrl = "{{ url_for('server.send_command_route', server_name=server_name) }}";
+
+
+        consoleOutputDiv.addEventListener('scroll', () => {
+            // Disable auto-scroll if user scrolls up significantly
+            if (consoleOutputDiv.scrollHeight - consoleOutputDiv.scrollTop > consoleOutputDiv.clientHeight + 50) { // 50px tolerance
+                autoScroll = false;
+            } else {
+                autoScroll = true;
+            }
+        });
+
+        function scrollToBottom() {
+            if (autoScroll) {
+                consoleOutputDiv.scrollTop = consoleOutputDiv.scrollHeight;
+            }
+        }
+
+        function fetchConsoleOutput() {
+            fetch(getConsoleOutputUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    consoleOutputDiv.innerHTML = ''; // Clear previous content
+                    if (Array.isArray(data)) {
+                        data.forEach(line => {
+                            const lineElement = document.createElement('div');
+                            lineElement.textContent = line;
+                            consoleOutputDiv.appendChild(lineElement);
+                        });
+                    } else if (typeof data === 'string') { // Fallback for single string message
+                         const lineElement = document.createElement('div');
+                         lineElement.textContent = data;
+                         consoleOutputDiv.appendChild(lineElement);
+                    }
+                    scrollToBottom();
+                })
+                .catch(error => {
+                    console.error('Error fetching console output:', error);
+                    const errorElement = document.createElement('div');
+                    errorElement.textContent = "Fehler beim Laden der Konsole oder Server nicht erreichbar.";
+                    errorElement.style.color = "red";
+                    consoleOutputDiv.appendChild(errorElement);
+                    // Optional: Stop polling if there's a persistent error
+                    // clearInterval(intervalId);
+                });
+        }
+        
+        commandForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const command = commandInput.value;
+            if (command.trim() === '') return;
+
+            // Add command to console immediately for responsiveness (optional)
+            // const commandEcho = document.createElement('div');
+            // commandEcho.textContent = `> ${command}`;
+            // commandEcho.style.color = "#88aaff"; // Lighter color for user command
+            // consoleOutputDiv.appendChild(commandEcho);
+            // scrollToBottom();
+
+
+            fetch(sendCommandUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    // Add CSRF token header if you implement CSRF protection
+                },
+                body: `command=${encodeURIComponent(command)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    commandInput.value = ''; // Clear command input
+                } else {
+                    alert(`Fehler: ${data.message}`);
+                }
+                // Fetch output again to see command result (server might take time to process)
+                // setTimeout(fetchConsoleOutput, 200); // Slight delay
+            })
+            .catch(error => {
+                 console.error('Error sending command:', error);
+                 alert('Fehler beim Senden des Befehls.');
+            });
+        });
+
+        // Initial load and periodic refresh
+        fetchConsoleOutput();
+        intervalId = setInterval(fetchConsoleOutput, 3000); // Refresh every 3 seconds
+
+        // Stop interval when the page is hidden (e.g. tab change) or unloaded
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                clearInterval(intervalId);
+                intervalId = null;
+            } else {
+                if (!intervalId) {
+                    fetchConsoleOutput(); // Fetch immediately when tab becomes visible again
+                    intervalId = setInterval(fetchConsoleOutput, 3000);
+                }
+            }
+        });
+        window.addEventListener('beforeunload', () => {
+            clearInterval(intervalId);
+        });
+    });
+</script>
+{% endblock %}

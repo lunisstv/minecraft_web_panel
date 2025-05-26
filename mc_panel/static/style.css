@@ -1,0 +1,447 @@
+/* mc_panel/static/style.css - Darkmode im Apple-inspirierten Stil */
+
+:root {
+    --bg-primary: #161617; /* Haupt-Hintergrund */
+    --bg-secondary: #1d1d1f; /* Container, Karten */
+    --bg-tertiary: #2c2c2e; /* Etwas hellerer Hintergrund für z.B. Tabellenzeilen */
+    --bg-hover: #3a3a3c; /* Hover-Effekte */
+
+    --text-primary: #f5f5f7; /* Heller Haupttext */
+    --text-secondary: #c7c7cc; /* Sekundärtext, Platzhalter */
+    --text-disabled: #8e8e93;
+
+    --accent-blue: #0A84FF; /* Apples Standard-Blau */
+    --accent-blue-hover: #3395ff;
+    --accent-green: #30D158;
+    --accent-red: #FF453A;
+    --accent-yellow: #FFD60A;
+    --accent-orange: #FF9F0A;
+    --accent-gray: #8e8e93;
+
+    --border-color: #38383a; /* Ränder für Container, Inputs */
+    --border-color-subtle: #2a2a2c; /* Subtilere Ränder */
+
+    --font-family-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    
+    --border-radius-small: 6px;
+    --border-radius-medium: 10px;
+    --border-radius-large: 12px;
+
+    --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.1);
+    --shadow-medium: 0 4px 8px rgba(0, 0, 0, 0.25), 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* Globale Stile */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 16px; /* Basis-Schriftgröße */
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-family-system);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.container {
+    width: 90%;
+    max-width: 1200px;
+    margin: 30px auto;
+    padding: 25px 30px;
+    background-color: var(--bg-secondary);
+    border-radius: var(--border-radius-large);
+    /* box-shadow: var(--shadow-medium); */
+}
+
+/* Navigation */
+nav {
+    background-color: var(--bg-secondary); /* Gleicher Hintergrund wie Container für nahtlosen Look */
+    color: var(--text-primary);
+    padding: 0.8em 0;
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    /* box-shadow: 0 2px 4px rgba(0,0,0,0.2); */
+}
+
+nav ul {
+    list-style-type: none;
+    display: flex; /* Flexbox für bessere Ausrichtung */
+    justify-content: center; /* Zentriert die Hauptlinks */
+    align-items: center;
+    padding: 0 20px;
+    margin: 0 auto;
+    max-width: 1200px; /* passt zur Containerbreite */
+}
+
+nav ul li {
+    margin: 0 15px;
+}
+
+nav ul li a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 1em; /* Etwas kleiner für Nav-Links */
+    font-weight: 500;
+    padding: 8px 4px;
+    border-radius: var(--border-radius-small);
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+nav ul li a:hover,
+nav ul li a.active { /* 'active' Klasse wird in base.html gesetzt */
+    color: var(--accent-blue);
+    /* background-color: rgba(10, 132, 255, 0.1); Optionaler subtiler Hintergrund */
+}
+
+.auth-links {
+    position: absolute; /* Positioniert rechts oben */
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+}
+.auth-links span {
+    margin-right: 15px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+.auth-links a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    margin-left: 10px;
+    font-size: 0.9em;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: var(--border-radius-small);
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+.auth-links a:hover {
+    color: var(--accent-blue);
+    background-color: var(--bg-hover);
+}
+
+/* Typografie */
+h1, h2, h3 {
+    color: var(--text-primary);
+    margin-top: 0;
+    font-weight: 600;
+}
+h1 { font-size: 1.8em; margin-bottom: 0.8em;}
+h2 { font-size: 1.4em; margin-bottom: 0.7em; padding-bottom: 0.4em; border-bottom: 1px solid var(--border-color-subtle); }
+h3 { font-size: 1.2em; margin-bottom: 0.5em; font-weight: 500; }
+
+p {
+    margin-bottom: 1em;
+    color: var(--text-secondary);
+}
+a {
+    color: var(--accent-blue);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+a:hover {
+    color: var(--accent-blue-hover);
+    text-decoration: underline;
+}
+
+/* Flash Nachrichten */
+.flash-messages {
+    list-style-type: none;
+    padding: 0;
+    margin: 0 0 25px 0;
+}
+.flash-messages li {
+    padding: 12px 20px;
+    margin-bottom: 12px;
+    border-radius: var(--border-radius-medium);
+    border: 1px solid transparent;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+}
+.flash-messages li::before { /* Für Icons (optional, braucht FontAwesome o.ä.) */
+    margin-right: 10px;
+    font-size: 1.2em;
+}
+.flash-messages .success { background-color: rgba(48, 209, 88, 0.15); color: #30D158; border-left: 4px solid #30D158; }
+.flash-messages .error   { background-color: rgba(255, 69, 58, 0.15); color: #FF453A; border-left: 4px solid #FF453A; }
+.flash-messages .warning { background-color: rgba(255, 159, 10, 0.15); color: #FF9F0A; border-left: 4px solid #FF9F0A; }
+.flash-messages .info    { background-color: rgba(10, 132, 255, 0.15); color: #0A84FF; border-left: 4px solid #0A84FF; }
+
+/* Tabellen */
+table {
+    width: 100%;
+    border-collapse: separate; /* Wichtig für border-radius auf Zellen/Reihen */
+    border-spacing: 0;
+    margin-bottom: 25px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    overflow: hidden; /* Damit border-radius greift */
+}
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color-subtle);
+}
+th {
+    background-color: var(--bg-tertiary); /* Etwas anderer Hintergrund für Header */
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.9em;
+    text-transform: uppercase; /* Leichte Hervorhebung */
+    letter-spacing: 0.5px;
+}
+tr:last-child td {
+    border-bottom: none; /* Kein doppelter Rand unten */
+}
+tr:hover td { /* Subtiler Hover-Effekt für Tabellenzeilen */
+    background-color: var(--bg-hover);
+}
+
+/* Buttons und Aktionen */
+.button, input[type="submit"], .button-link {
+    display: inline-block;
+    padding: 10px 20px;
+    border: none;
+    border-radius: var(--border-radius-medium);
+    cursor: pointer;
+    text-decoration: none !important; /* Wichtig für a.button-link */
+    font-size: 0.95em;
+    font-weight: 500;
+    color: var(--text-primary) !important;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    text-align: center;
+}
+.button:hover, input[type="submit"]:hover, .button-link:hover {
+    filter: brightness(115%);
+    transform: translateY(-1px);
+}
+.button:active, input[type="submit"]:active, .button-link:active {
+    transform: translateY(0px);
+    filter: brightness(90%);
+}
+
+.button.primary, input[type="submit"] { background-color: var(--accent-blue); color: white !important; }
+.button.start  { background-color: var(--accent-green); color: white !important; }
+.button.stop   { background-color: var(--accent-red); color: white !important; }
+.button.console{ background-color: var(--accent-gray); color: white !important; }
+.button.delete { background-color: var(--accent-orange); color: white !important; }
+.actions form, .actions .button-link {
+    display: inline-block;
+    margin-right: 8px;
+    margin-bottom: 8px;
+}
+.actions button { /* Stellt sicher, dass Buttons in Forms wie .button aussehen */
+    padding: 10px 20px;
+    border: none;
+    border-radius: var(--border-radius-medium);
+    cursor: pointer;
+    font-size: 0.95em;
+    font-weight: 500;
+    color: var(--text-primary) !important;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+.actions button:hover { filter: brightness(115%); transform: translateY(-1px); }
+.actions button:active { transform: translateY(0px); filter: brightness(90%); }
+
+.actions .start { background-color: var(--accent-green); }
+.actions .stop { background-color: var(--accent-red); }
+.actions .console { background-color: var(--accent-gray); } /* Wird durch a.button-link gestyled */
+.actions .delete { background-color: var(--accent-orange); }
+
+
+/* Formulare */
+form div {
+    margin-bottom: 20px;
+}
+form label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+form input[type="text"],
+form input[type="number"],
+form input[type="password"],
+form input[type="file"],
+form select {
+    width: 100%;
+    padding: 12px 15px;
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    font-size: 1em;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+form input[type="text"]:focus,
+form input[type="number"]:focus,
+form input[type="password"]:focus,
+form input[type="file"]:focus,
+form select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.3);
+}
+form input[type="file"] {
+    padding: 8px 10px; /* File Input braucht oft spezielles Padding */
+}
+form input[type="file"]::file-selector-button { /* Style für den "Browse" Button */
+    padding: 8px 15px;
+    border: none;
+    border-radius: var(--border-radius-small);
+    background-color: var(--accent-gray);
+    color: var(--text-primary);
+    font-weight: 500;
+    cursor: pointer;
+    margin-right: 10px;
+    transition: background-color 0.2s ease;
+}
+form input[type="file"]::file-selector-button:hover {
+    background-color: var(--bg-hover);
+}
+
+form input[type="checkbox"] {
+    margin-right: 10px;
+    vertical-align: middle;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent-blue); /* Für moderne Browser */
+}
+form label[for*="eula"] { /* Spezifisch für EULA Label, um es inline mit Checkbox zu bekommen */
+    display: inline-block;
+    color: var(--text-primary);
+    font-weight: normal;
+    font-size: 1em;
+}
+
+form small {
+    display: block;
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    margin-top: 5px;
+}
+
+/* JAR Liste */
+.jar-list {
+    list-style-type: none;
+    padding: 0;
+    margin-top: 15px;
+}
+.jar-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-color-subtle);
+}
+.jar-list li:last-child {
+    border-bottom: none;
+}
+.jar-list span {
+    font-weight: 500;
+}
+.jar-list form {
+    margin: 0;
+}
+.jar-list .delete { /* Stellt sicher, dass der Löschen-Button klein bleibt */
+    padding: 6px 12px;
+    font-size: 0.85em;
+}
+
+
+/* Konsole */
+#console-output {
+    height: 450px;
+    overflow-y: auto; /* 'auto' ist oft besser als 'scroll' */
+    border: 1px solid var(--border-color);
+    padding: 15px;
+    background-color: #0d0d0e; /* Noch dunkler für Kontrast */
+    color: #d1d1d6; /* Etwas gedämpfter für Konsolentext */
+    font-family: "SF Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", monospace;
+    white-space: pre-wrap;
+    font-size: 0.9em;
+    border-radius: var(--border-radius-medium);
+    margin-bottom: 20px;
+}
+#console-output div {
+    padding: 1px 0;
+    line-height: 1.4;
+}
+
+#command-form {
+    display: flex; /* Flexbox für Input und Button nebeneinander */
+}
+#command-form input[type="text"] {
+    flex-grow: 1; /* Input nimmt verfügbaren Platz ein */
+    margin-right: 10px;
+    margin-bottom: 0; /* Kein unterer Rand, da in Flex-Container */
+}
+#command-form button {
+    flex-shrink: 0; /* Button schrumpft nicht */
+    margin-bottom: 0;
+}
+
+/* Login Form spezifisch */
+.login-container { /* Kann in login.html um das Formular gelegt werden */
+    width: 100%;
+    max-width: 400px;
+    margin: 60px auto;
+    padding: 30px;
+    background-color: var(--bg-secondary);
+    border-radius: var(--border-radius-large);
+    /* box-shadow: var(--shadow-medium); */
+}
+.login-container h2 {
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+/* Responsive Anpassungen (optional, aber gut für den Anfang) */
+@media (max-width: 768px) {
+    .container {
+        width: 95%;
+        padding: 20px;
+    }
+    nav ul {
+        flex-direction: column;
+        align-items: center;
+    }
+    nav ul li {
+        margin: 8px 0;
+    }
+    .auth-links {
+        position: static;
+        transform: none;
+        float: none;
+        text-align: center;
+        margin-top: 10px;
+        padding-bottom: 10px;
+    }
+    h1 { font-size: 1.6em; }
+    h2 { font-size: 1.3em; }
+
+    #command-form {
+        flex-direction: column;
+    }
+    #command-form input[type="text"] {
+        margin-right: 0;
+        margin-bottom: 10px;
+    }
+    #command-form button {
+        width: 100%;
+    }
+}
