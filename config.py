@@ -7,6 +7,8 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DEBUG = True
 HOST = '0.0.0.0'
 PORT = 5000
+# UNBEDINGT ÄNDERN! Muss ein langer, zufälliger String sein.
+# Du kannst z.B. "import secrets; secrets.token_hex(32)" in einer Python-Konsole nutzen.
 SECRET_KEY = 'default_secret_key_please_change_in_instance_config_very_long_and_random' # Wichtig!
 PERMANENT_SESSION_LIFETIME = 60 * 60 * 24 * 7 # 7 Tage
 
